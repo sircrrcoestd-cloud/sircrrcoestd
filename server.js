@@ -7,7 +7,6 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const bcrypt = require('bcrypt');
 const PDFDocument = require('pdfkit');
-const PDFTable = require("pdfkit-table");
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const fs = require('fs');
@@ -7115,209 +7114,127 @@ app.get("/favicon.ico", (req, res) => res.status(204).end());
 
 // 🔹 Full Account Copy with FY, Payments, and Due Calculation (with logs + PDF printing)
 app.get("/account-copy-fy/:userId", (req, res) => {
-  const { userId } = req.params;
-  console.log("➡️ Incoming request for userId:", userId);
+  // ... all your querying logic up to PDF
 
-  pool.query(
-    "SELECT reg_no, name AS full_name, course AS branch, uniqueId FROM students WHERE reg_no = ? OR uniqueId = ?",
-    [userId, userId],
-    (err, studentRows) => {
-      if (err) {
-        console.error("❌ Student Query Error:", err.sqlMessage || err);
-        return res.status(500).json({ success: false, message: "Internal Server Error - Student Query" });
-      }
-      if (!studentRows.length) {
-        console.warn("⚠️ Student not found for:", userId);
-        return res.status(404).json({ success: false, message: "Student not found" });
-      }
+  const uploadsDir = path.join(__dirname, "uploads");
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-      const { reg_no, uniqueId, full_name, branch } = studentRows[0];
-      console.log("✅ Student Found:", { reg_no, uniqueId, full_name, branch });
+  const doc = new PDFDocument({ margin: 20, size: "A4" });
+  const filePath = path.join(uploadsDir, `${reg_no}_account_copy.pdf`);
+  const stream = fs.createWriteStream(filePath);
+  doc.pipe(stream);
 
-      // Fetch fee structure
-      pool.query(
-        "SELECT academic_year, tuition, hostel, bus, university, semester, `library`, `fines` FROM student_fee_structure WHERE reg_no = ? ORDER BY academic_year ASC",
-        [reg_no],
-        (err, feeRows) => {
-          if (err) {
-            console.error("❌ Fee Structure Query Error:", err.sqlMessage || err);
-            return res.status(500).json({ success: false, message: "Internal Server Error - Fee Query" });
-          }
-          if (!feeRows.length) {
-            console.warn("⚠️ No fee data for student:", reg_no);
-            return res.status(404).json({ success: false, message: "No fee data" });
-          }
+  // Header
+  doc.fontSize(14).font("Helvetica-Bold").text("CRR COLLEGE OF ENGINEERING", { align: "center" });
+  doc.fontSize(12).font("Helvetica-Bold").text("ACCOUNT COPY (Financial Year Wise)", { align: "center" });
+  doc.moveDown(0.5);
+  doc.fontSize(11).font("Helvetica-Bold")
+    .text(`Reg No: ${reg_no}`, { continued: true })
+    .text(`Name: ${full_name}`, { align: "right" });
+  doc.fontSize(11).font("Helvetica-Bold").text(`Branch: ${branch || "-"}`, { align: "left" });
+  doc.moveDown();
 
-          console.log("✅ Fee Rows Found:", feeRows.length);
+  // -- Table Coordinates and Measurements
+  const startX = 40;
+  let startY = doc.y;
+  const colWidths = [80, 80, 80, 80, 80, 100, 80]; // Adjust as per image
+  const headers = [
+    "Academic Year", "Due Amount", "Demand", "Amount Paid",
+    "Bank Date", "Bank Reference No", "Amount Due"
+  ];
 
-          // Fetch payments
-          pool.query(
-            "SELECT feetype, amount, transaction_date, sbi_ref_no AS ref_no FROM sbi_uploaded_references WHERE unique_id = ? ORDER BY STR_TO_DATE(transaction_date, '%m/%d/%Y') ASC",
-            [uniqueId],
-            (err, payments) => {
-              if (err) {
-                console.error("❌ Payments Query Error:", err.sqlMessage || err);
-                return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
-              }
+  // Draw table header box and lines
+  let x = startX;
+  doc.font("Helvetica-Bold").fontSize(10);
+  headers.forEach((header, idx) => {
+    doc.rect(x, startY, colWidths[idx], 28).stroke();
+    doc.text(header, x + 3, startY + 8, { width: colWidths[idx] - 6, align: "center" });
+    x += colWidths[idx];
+  });
 
-              console.log("✅ Payments Found:", payments.length);
+  // Each row
+  let carryForwardDue = 0;
+  doc.font("Helvetica").fontSize(10);
+  startY += 28;
+  feeRows.forEach((fee, rowIdx) => {
+    x = startX;
+    const rowHeight = 22;
+    const fyStartCurrent = startYear + rowIdx;
+    const fyEndCurrent = fyStartCurrent + 1;
+    const fy = `${fyStartCurrent}-${fyEndCurrent}`;
+    const academicYear = fee.academic_year || `${rowIdx + 1} Year`;
+    const demand =
+      (parseFloat(fee.tuition) || 0) +
+      (parseFloat(fee.hostel) || 0) +
+      (parseFloat(fee.bus) || 0) +
+      (parseFloat(fee.university) || 0) +
+      (parseFloat(fee.semester) || 0) +
+      (parseFloat(fee.library) || 0) +
+      (parseFloat(fee.fines) || 0);
 
-              // --- Admission year guess
-              let startYear;
-              if (/^21/.test(reg_no)) startYear = 2021;
-              else if (/^22/.test(reg_no)) startYear = 2022;
-              else if (/^23/.test(reg_no)) startYear = 2023;
-              else startYear = new Date().getFullYear();
-
-              console.log("📅 Admission Start Year:", startYear);
-
-              // --- Group payments by FY
-              const paymentsByFY = {};
-              (payments || []).forEach(p => {
-                try {
-                  if (!p.transaction_date) return;
-
-                  const d = new Date(p.transaction_date);
-                  if (isNaN(d)) {
-                    console.error("❌ Invalid Date Format:", p.transaction_date);
-                    return;
-                  }
-
-                  const month = d.getMonth() + 1;
-                  const year = d.getFullYear();
-                  const dd = String(d.getDate()).padStart(2, "0");
-                  const mm = String(month).padStart(2, "0");
-                  const yyyy = String(year);
-
-                  const fyStart = month >= 4 ? year : year - 1;
-                  const fyEnd = fyStart + 1;
-                  const fy = `${fyStart}-${fyEnd}`;
-
-                  if (!paymentsByFY[fy]) paymentsByFY[fy] = [];
-                  paymentsByFY[fy].push({
-                    ...p,
-                    parsedDate: `${dd}-${mm}-${yyyy}`
-                  });
-                } catch (e) {
-                  console.error("❌ Payment Parse Error:", e.message, p);
-                }
-              });
-
-              console.log("📊 Payments Grouped By FY:", Object.keys(paymentsByFY));
-
-              // --- PDF Setup
-              const uploadsDir = path.join(__dirname, "uploads");
-              if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-
-              const doc = new PDFDocument({ margin: 20, size: "A4" });
-              const filePath = path.join(uploadsDir, `${reg_no}_account_copy.pdf`);
-              const stream = fs.createWriteStream(filePath);
-              doc.pipe(stream);
-
-              // Header
-              doc.fontSize(14).font("Helvetica-Bold").text("CRR COLLEGE OF ENGINEERING", { align: "center" });
-              doc.fontSize(12).font("Helvetica-Bold").text("ACCOUNT COPY (Financial Year Wise)", { align: "center" });
-              doc.moveDown(0.5);
-              doc.fontSize(11).font("Helvetica-Bold")
-                .text(`Reg No: ${reg_no}`, { continued: true })
-                .text(`Name: ${full_name}`, { align: "right" });
-              doc.fontSize(11).font("Helvetica-Bold").text(`Branch: ${branch || "-"}`, { align: "left" });
-              doc.moveDown();
-
-              // Table Setup
-              const table = {
-                headers: [
-                  "Academic Year", "Due Amount", "Demand", "Amount Paid",
-                  "Bank Date", "Bank Reference No", "Amount Due"
-                ],
-                rows: []
-              };
-
-              let carryForwardDue = 0;
-
-              // Table rows generation
-              feeRows.forEach((fee, idx) => {
-                const fyStartCurrent = startYear + idx;
-                const fyEndCurrent = fyStartCurrent + 1;
-                const fy = `${fyStartCurrent}-${fyEndCurrent}`;
-                const academicYear = fee.academic_year || `${idx + 1} Year`;
-                const demand = (parseFloat(fee.tuition) || 0) + (parseFloat(fee.hostel) || 0) +
-                  (parseFloat(fee.bus) || 0) + (parseFloat(fee.university) || 0) +
-                  (parseFloat(fee.semester) || 0) + (parseFloat(fee.library) || 0) +
-                  (parseFloat(fee.fines) || 0);
-
-                let paidTotal = 0;
-                let latestPay = {};
-                if (paymentsByFY[fy] && paymentsByFY[fy].length) {
-                  paymentsByFY[fy].forEach(pmt => {
-                    paidTotal += parseFloat(pmt.amount) || 0;
-                    latestPay = pmt;
-                  });
-                }
-                const due = demand + carryForwardDue - paidTotal;
-                carryForwardDue = due;
-
-                // Main row
-                table.rows.push([
-                  academicYear,
-                  demand,
-                  fee.tuition,
-                  paidTotal || "",
-                  (paymentsByFY[fy] && paymentsByFY[fy][0] && paymentsByFY[fy][0].parsedDate) || "",
-                  (paymentsByFY[fy] && paymentsByFY[fy][0] && paymentsByFY[fy][0].ref_no) || "",
-                  due
-                ]);
-                // Add all payments as subrows for that year
-                if (paymentsByFY[fy] && paymentsByFY[fy].length) {
-                  paymentsByFY[fy].forEach(ptmt => {
-                    table.rows.push([
-                      "",
-                      "",
-                      "",
-                      ptmt.amount,
-                      ptmt.parsedDate,
-                      ptmt.ref_no,
-                      ""
-                    ]);
-                  });
-                }
-              });
-
-              // Draw table with borders and alignment
-              doc.table(table, {
-                width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-                padding: 4,
-                columnSpacing: 2,
-                // Custom border styling as in your sample
-                border: {
-                  top: { width: 1, color: "#000" },
-                  bottom: { width: 1, color: "#000" },
-                  left: { width: 1, color: "#000" },
-                  right: { width: 1, color: "#000" }
-                },
-                prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10).fillColor("black"),
-                prepareRow: (row, i) => doc.font("Helvetica").fontSize(10)
-              });
-
-              // Summary
-              doc.moveDown();
-              doc.fontSize(13).fillColor("red")
-                .text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
-
-              doc.end();
-              stream.on("finish", () => {
-                res.download(filePath, `${reg_no}_account_copy.pdf`, (err) => {
-                  if (err) console.error("❌ Download error:", err);
-                  fs.unlink(filePath, () => {});
-                });
-              });
-            }
-          );
-        }
-      );
+    let paidTotal = 0;
+    let paymentsArr = [];
+    if (paymentsByFY[fy] && paymentsByFY[fy].length) {
+      paymentsByFY[fy].forEach(pt => {
+        paidTotal += parseFloat(pt.amount) || 0;
+        paymentsArr.push(pt); // Save for sub-rows
+      });
     }
-  );
+    const due = demand + carryForwardDue - paidTotal;
+    carryForwardDue = due;
+
+    // Draw main row box and text
+    headers.forEach((header, colIdx) => {
+      doc.rect(x, startY, colWidths[colIdx], rowHeight).stroke();
+      let val = "";
+      if (header === "Academic Year") val = academicYear;
+      if (header === "Due Amount") val = demand;
+      if (header === "Demand") val = fee.tuition;
+      if (header === "Amount Paid") val = paidTotal || "";
+      if (header === "Bank Date") val = paymentsArr[0]?.parsedDate || "";
+      if (header === "Bank Reference No") val = paymentsArr[0]?.ref_no || "";
+      if (header === "Amount Due") val = due;
+      doc.text(String(val), x + 3, startY + 7, { width: colWidths[colIdx] - 6, align: "center" });
+      x += colWidths[colIdx];
+    });
+    startY += rowHeight;
+
+    // Add a row for each extra payment (other than first, shown above)
+    paymentsArr.slice(1).forEach(pt => {
+      x = startX;
+      headers.forEach((header, colIdx) => {
+        doc.rect(x, startY, colWidths[colIdx], rowHeight).stroke();
+        let val = "";
+        if (header === "Amount Paid") val = pt.amount;
+        if (header === "Bank Date") val = pt.parsedDate;
+        if (header === "Bank Reference No") val = pt.ref_no;
+        doc.text(String(val), x + 3, startY + 7, { width: colWidths[colIdx] - 6, align: "center" });
+        x += colWidths[colIdx];
+      });
+      startY += rowHeight;
+    });
+  });
+
+  // Draw vertical lines for all columns
+  x = startX;
+  for (let c = 0; c <= headers.length; c++) {
+    doc.moveTo(x, doc.y - (startY - doc.y)).lineTo(x, startY).stroke();
+    if (c < headers.length) x += colWidths[c];
+  }
+
+  // Final summary
+  doc.moveDown(2);
+  doc.fontSize(13).fillColor("red").text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
+
+  doc.end();
+  stream.on("finish", () => {
+    res.download(filePath, `${reg_no}_account_copy.pdf`, err => {
+      if (err) console.error("❌ Download error:", err);
+      fs.unlink(filePath, () => {});
+    });
+  });
 });
+
 
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
