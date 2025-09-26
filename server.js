@@ -7121,23 +7121,39 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     "SELECT reg_no, name AS full_name, course AS branch, uniqueId FROM students WHERE reg_no = ? OR uniqueId = ?",
     [userId, userId],
     (err, studentRows) => {
-      if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Student Query" });
-      if (!studentRows.length) return res.status(404).json({ success: false, message: "Student not found" });
+      if (err) {
+        console.error("❌ Student Query Error:", err.sqlMessage || err);
+        return res.status(500).json({ success: false, message: "Internal Server Error - Student Query" });
+      }
+      if (!studentRows.length) {
+        console.warn("⚠️ Student not found for:", userId);
+        return res.status(404).json({ success: false, message: "Student not found" });
+      }
 
       const { reg_no, uniqueId, full_name, branch } = studentRows[0];
+      console.log("✅ Student Found:", { reg_no, uniqueId, full_name, branch });
 
       pool.query(
         "SELECT academic_year, tuition, hostel, bus, university, semester, `library`, `fines` FROM student_fee_structure WHERE reg_no = ? ORDER BY academic_year ASC",
         [reg_no],
         (err, feeRows) => {
-          if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Fee Query" });
-          if (!feeRows.length) return res.status(404).json({ success: false, message: "No fee data" });
+          if (err) {
+            console.error("❌ Fee Structure Query Error:", err.sqlMessage || err);
+            return res.status(500).json({ success: false, message: "Internal Server Error - Fee Query" });
+          }
+          if (!feeRows.length) {
+            console.warn("⚠️ No fee data for student:", reg_no);
+            return res.status(404).json({ success: false, message: "No fee data" });
+          }
 
           pool.query(
-            "SELECT feetype, amount, transaction_date, sbi_ref_no AS ref_no FROM sbi_uploaded_references WHERE unique_id = ? ORDER BY STR_TO_DATE(transaction_date, '%m/%d/%Y') ASC",
+            "SELECT feetype, amount, transaction_date, sbi_ref_no AS ref_no FROM sbi_uploaded_references WHERE unique_id = ? ORDER BY STR_TO_DATE(transaction_date, '%d-%m-%Y') ASC",
             [uniqueId],
             (err, payments) => {
-              if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
+              if (err) {
+                console.error("❌ Payments Query Error:", err.sqlMessage || err);
+                return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
+              }
 
               let startYear;
               if (/^21/.test(reg_no)) startYear = 2021;
@@ -7161,41 +7177,41 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 paymentsByFY[fy].push({
                   ...p,
                   parsedDate: `${dd}-${mm}-${year}`,
+                  amount: parseFloat(p.amount) || 0
                 });
               });
 
               const uploadsDir = path.join(__dirname, "uploads");
               if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-              const doc = new PDFDocument({ margin: 50, size: "A4" });
+              const doc = new PDFDocument({ margin: 40, size: "A4" });
               const filePath = path.join(uploadsDir, `${reg_no}_account_copy.pdf`);
               const stream = fs.createWriteStream(filePath);
               doc.pipe(stream);
 
-              // --- Header ---
-              doc.fontSize(16).font("Helvetica-Bold").text("CRR COLLEGE OF ENGINEERING", { align: "center" });
-              doc.fontSize(13).text("ACCOUNT COPY (Financial Year Wise)", { align: "center" });
-              doc.moveDown(1.5);
+              // Header
+              doc.fontSize(14).font("Helvetica-Bold").text("CRR COLLEGE OF ENGINEERING", { align: "center" });
+              doc.fontSize(12).text("ACCOUNT COPY (Financial Year Wise)", { align: "center" });
+              doc.moveDown();
 
-              doc.fontSize(11).font("Helvetica-Bold");
-              doc.text(`Reg No: ${reg_no}`, 50, doc.y, { continued: true })
-                 .text(`   Name: ${full_name}`, 300, doc.y);
-              doc.text(`Branch: ${branch || "-"}`, 50, doc.y + 15);
-              doc.moveDown(1.5);
+              doc.fontSize(11)
+                .text(`Reg No: ${reg_no}`, 40, doc.y, { continued: true })
+                .text(`   Name: ${full_name}`, 400, doc.y);
+              doc.text(`Branch: ${branch || "-"}`, 40, doc.y + 15);
+              doc.moveDown(2);
 
-              // --- Table Setup ---
-              const startX = 50;
+              // Table
+              const startX = 40;
               let startY = doc.y;
+              const tableColWidths = [60, 70, 60, 70, 70, 80, 80, 70];
               const rowHeight = 25;
-              const tableColWidths = [60, 60, 60, 60, 60, 80, 60, 60]; // Added a column for Prev Due
-
               const headers = ["Acad Year", "F.Y", "Prev Due", "Demand", "Amount Paid", "Bank Date", "Bank Ref No", "Amount Due"];
-              doc.fontSize(9).font("Helvetica-Bold"); // smaller font to fit amounts
 
               let currentX = startX;
-              headers.forEach((h, i) => {
+              doc.font("Helvetica-Bold").fontSize(10);
+              headers.forEach((header, i) => {
                 doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
-                doc.text(h, currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
+                doc.text(header, currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                 currentX += tableColWidths[i];
               });
               startY += rowHeight;
@@ -7207,8 +7223,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 const fyStartCurrent = startYear + idx;
                 const fyEndCurrent = fyStartCurrent + 1;
                 const fy = `${fyStartCurrent}-${fyEndCurrent}`;
-                const academicYear = idx + 1;
-
+                const academicYear = fee.academic_year || `${idx + 1} Year`;
                 const demand =
                   (parseFloat(fee.tuition) || 0) +
                   (parseFloat(fee.hostel) || 0) +
@@ -7218,55 +7233,49 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                   (parseFloat(fee.library) || 0) +
                   (parseFloat(fee.fines) || 0);
 
-                let paidTotal = 0;
-                let paymentsArr = [];
-                if (paymentsByFY[fy] && paymentsByFY[fy].length) {
-                  paymentsByFY[fy].forEach(pt => {
-                    const d = new Date(pt.transaction_date);
-                    const month = d.getMonth() + 1;
-                    const year = d.getFullYear();
-                    if ((year === fyStartCurrent && month >= 4) || (year === fyEndCurrent && month <= 3)) {
-                      paidTotal += parseFloat(pt.amount) || 0;
-                      paymentsArr.push(pt);
-                    }
-                  });
-                }
-
-                const due = demand + carryForwardDue - paidTotal;
-                const prevDue = carryForwardDue;
-                carryForwardDue = due;
-
-                // Draw row
-                currentX = startX;
-                const rowValues = [academicYear, fy, prevDue, demand, paidTotal || "", paymentsArr[0]?.parsedDate || "", paymentsArr[0]?.ref_no || "", due];
-                rowValues.forEach((val, i) => {
-                  doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
-                  doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
-                  currentX += tableColWidths[i];
-                });
-                startY += rowHeight;
-
-                // Extra rows for multiple payments
-                for (let i = 1; i < paymentsArr.length; i++) {
+                let fyPayments = paymentsByFY[fy] || [];
+                if (!fyPayments.length) {
+                  // Row if no payment
                   currentX = startX;
-                  const extraValues = ["", "", "", "", paymentsArr[i].amount, paymentsArr[i].parsedDate, paymentsArr[i].ref_no, ""];
-                  extraValues.forEach((val, j) => {
-                    doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
-                    doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: "center" });
-                    currentX += tableColWidths[j];
+                  const rowValues = [academicYear, fy, carryForwardDue, demand, "", "", "", carryForwardDue + demand];
+                  rowValues.forEach((val, i) => {
+                    doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
+                    doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
+                    currentX += tableColWidths[i];
                   });
+                  carryForwardDue += demand;
                   startY += rowHeight;
+                } else {
+                  fyPayments.forEach((p, i) => {
+                    currentX = startX;
+                    const amtPaid = p.amount;
+                    const rowValues = [
+                      i === 0 ? academicYear : "",
+                      i === 0 ? fy : "",
+                      i === 0 ? carryForwardDue : "",
+                      i === 0 ? demand : "",
+                      amtPaid,
+                      p.parsedDate,
+                      p.ref_no || "-",
+                      i === 0 ? carryForwardDue + demand - amtPaid : carryForwardDue + demand - amtPaid
+                    ];
+                    rowValues.forEach((val, colIdx) => {
+                      doc.rect(currentX, startY, tableColWidths[colIdx], rowHeight).stroke();
+                      doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[colIdx] - 4, align: "center" });
+                      currentX += tableColWidths[colIdx];
+                    });
+                    startY += rowHeight;
+                    carryForwardDue = carryForwardDue + demand - amtPaid;
+                  });
                 }
               });
 
-              // Extra FY if carry forward exists
+              // Extra FY if carryForward exists
               if (carryForwardDue > 0) {
                 currentX = startX;
-                const fyStartExtra = startYear + feeRows.length;
-                const fyEndExtra = fyStartExtra + 1;
-                const fy = `${fyStartExtra}-${fyEndExtra}`;
-                const extraValues = ["F.Y", fy, carryForwardDue, 0, 0, "-", "-", carryForwardDue];
-                extraValues.forEach((val, i) => {
+                const fy = `${startYear + feeRows.length}-${startYear + feeRows.length + 1}`;
+                const rowValues = ["F.Y", fy, carryForwardDue, 0, 0, "-", "-", carryForwardDue];
+                rowValues.forEach((val, i) => {
                   doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
                   doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                   currentX += tableColWidths[i];
@@ -7274,13 +7283,14 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 startY += rowHeight;
               }
 
-              // Footer
-              doc.moveDown(2);
-              doc.fontSize(11).fillColor("red").text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
+              // Final Outstanding Due
+              doc.moveDown(1);
+              doc.fontSize(12).fillColor("red").text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
 
               doc.end();
 
               stream.on("finish", () => {
+                console.log("✅ PDF Generated:", filePath);
                 res.download(filePath, `${reg_no}_account_copy.pdf`, (err) => {
                   if (err) console.error("❌ Download error:", err);
                   fs.unlink(filePath, () => {});
@@ -7293,6 +7303,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
+
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
 app.get(["/principal/all-subjects", "/correspondent/all-subjects"], (req, res) => {
