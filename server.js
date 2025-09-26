@@ -7117,26 +7117,31 @@ app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
 
   pool.query(
-    "SELECT reg_no, name AS full_name, course AS branch, uniqueId FROM students WHERE reg_no = ? OR uniqueId = ?",
+    "SELECT reg_no, name AS full_name, course AS branch, uniqueId, section FROM students WHERE reg_no = ? OR uniqueId = ?",
     [userId, userId],
     (err, studentRows) => {
-      if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Student Query" });
-      if (!studentRows.length) return res.status(404).json({ success: false, message: "Student not found" });
+      if (err)
+        return res.status(500).json({ success: false, message: "Internal Server Error - Student Query" });
+      if (!studentRows.length)
+        return res.status(404).json({ success: false, message: "Student not found" });
 
-      const { reg_no, uniqueId, full_name, branch } = studentRows[0];
+      const { reg_no, uniqueId, full_name, branch, section } = studentRows[0];
 
       pool.query(
         "SELECT academic_year, tuition, hostel, bus, university, semester, `library`, `fines` FROM student_fee_structure WHERE reg_no = ? ORDER BY academic_year ASC",
         [reg_no],
         (err, feeRows) => {
-          if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Fee Query" });
-          if (!feeRows.length) return res.status(404).json({ success: false, message: "No fee data" });
+          if (err)
+            return res.status(500).json({ success: false, message: "Internal Server Error - Fee Query" });
+          if (!feeRows.length)
+            return res.status(404).json({ success: false, message: "No fee data" });
 
           pool.query(
             "SELECT feetype, amount, transaction_date, sbi_ref_no AS ref_no FROM sbi_uploaded_references WHERE unique_id = ? ORDER BY STR_TO_DATE(transaction_date, '%m/%d/%Y') ASC",
             [uniqueId],
             (err, payments) => {
-              if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
+              if (err)
+                return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
 
               let startYear;
               if (/^21/.test(reg_no)) startYear = 2021;
@@ -7169,15 +7174,26 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const stream = fs.createWriteStream(filePath);
               doc.pipe(stream);
 
-              // --- Header ---
+              // --- College Header ---
               doc.fontSize(16).font("Helvetica-Bold").text("CRR COLLEGE OF ENGINEERING", { align: "center" });
               doc.fontSize(13).text("ACCOUNT COPY (Financial Year Wise)", { align: "center" });
-              doc.moveDown(1.5);
+              doc.moveDown(1.2);
 
+              // --- Student Details Block ---
               doc.fontSize(11).font("Helvetica-Bold");
-              doc.text(`Reg No: ${reg_no}`, 50, doc.y, { continued: true })
-                 .text(`   Name: ${full_name}`, 300, doc.y);
-              doc.text(`Branch: ${branch || "-"}`, 50, doc.y + 15);
+              const detailsX = 50;
+              let y = doc.y;
+
+              doc.text(`Reg No: ${reg_no}`, detailsX, y);
+              doc.text(`Unique ID: ${uniqueId}`, 320, y);
+
+              y += 15;
+              doc.text(`Name: ${full_name}`, detailsX, y);
+              doc.text(`Branch: ${branch || "-"}`, 320, y);
+
+              y += 15;
+              doc.text(`Section: ${section || "-"}`, detailsX, y);
+
               doc.moveDown(1.5);
 
               // --- Table Setup ---
@@ -7224,7 +7240,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                   paymentsArr.forEach((pt, i) => {
                     currentX = startX;
                     const amountPaid = parseFloat(pt.amount) || 0;
-
                     runningDue -= amountPaid;
 
                     const rowValues = [
@@ -7278,6 +7293,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
+
 
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
