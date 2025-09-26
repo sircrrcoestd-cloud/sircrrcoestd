@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Help & Feedback</title>
+    <link rel="icon" href="crrengglogo.png" type="image/png" />
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+    />
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.20/dist/sweetalert2.min.css"
+    />
+    <style>
+        :root {
+            --primary-color: #0b2e59;
+            --secondary-color: #2c6e91;
+            --accent-color: #f7a048;
+            --background-dark: #f0f2f5;
+            --background-light: #ffffff;
+            --text-dark: #333333;
+            --text-light: #f4f4f4;
+            --card-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            --border-radius-lg: 16px;
+            --border-radius-md: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--background-dark);
+        }
+
+        a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background-color: var(--primary-color);
+            display: flex;
+            flex-direction: column;
+            padding: 30px 20px;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease-in-out;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .photo-container {
+            display: flex;
+            justify-content: center;
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .home-icon {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background-color: var(--background-light);
+            color: var(--primary-color);
+            border-radius: 50%;
+            font-size: 22px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease, background-color 0.3s ease;
+        }
+
+        .home-icon:hover {
+            transform: scale(1.1);
+            background-color: var(--accent-color);
+            color: var(--text-light);
+        }
+
+        .sidebar-photo {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 50%;
+            margin: 0 auto 10px;
+            border: 4px solid var(--accent-color);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .sidebar h2 {
+            margin: 40px 20px 20px 20px;
+            color: var(--text-light);
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+
+        .menu {
+            list-style: none;
+            padding: 0;
+            flex-grow: 1;
+        }
+
+        .menu li {
+            list-style: none;
+            margin-bottom: 12px;
+        }
+
+        .menu li a {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 1rem;
+            color: var(--text-light);
+            padding: 15px 20px;
+            border-radius: var(--border-radius-md);
+            transition: all 0.3s ease;
+        }
+
+        .menu li a:hover,
+        .menu li.active a {
+            background-color: rgba(255, 255, 255, 0.1);
+            font-weight: 500;
+            transform: translateX(5px);
+            box-shadow: var(--card-shadow);
+        }
+
+        .menu li a i {
+            font-size: 1.2rem;
+            width: 25px;
+            text-align: center;
+            color: var(--text-light);
+            transition: color 0.3s ease;
+        }
+
+        .logout {
+            background-color: var(--accent-color);
+            color: var(--text-light);
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            width: 60%;
+            margin: 20px auto 0;
+            transition: background 0.3s ease, transform 0.2s ease;
+        }
+
+        .logout:hover {
+            background-color: #d3853b;
+            transform: scale(1.05);
+        }
+        
+        /* Main Content */
+        .main {
+            flex-grow: 1;
+            padding: 40px 30px;
+            margin-left: 280px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: margin-left 0.3s ease-in-out;
+            min-height: 100vh;
+        }
+
+        .form-card {
+            background: linear-gradient(135deg, rgba(44, 110, 145, 0.9), rgba(11, 46, 89, 0.9));
+            padding: 40px;
+            border-radius: var(--border-radius-lg);
+            width: 100%;
+            max-width: 600px;
+            color: var(--text-light);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            box-shadow: 0 12px 20px rgba(0, 0, 0, 0.3), 0 6px 8px rgba(0, 0, 0, 0.22);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .form-card:hover {
+            transform: scale(1.01);
+            box-shadow: 0 16px 28px rgba(0, 0, 0, 0.35);
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-light);
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 25px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .back-btn:hover {
+            color: var(--accent-color);
+            transform: translateX(-4px);
+        }
+
+        .back-btn i {
+            margin-right: 8px;
+            font-size: 1.1rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .form-card p {
+            margin-bottom: 25px;
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: 500;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            margin-top: 8px;
+            border: none;
+            border-radius: var(--border-radius-md);
+            font-size: 1rem;
+            background-color: rgba(255, 255, 255, 0.95);
+            color: var(--text-dark);
+            resize: vertical;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px var(--accent-color);
+        }
+
+        button[type="submit"] {
+            margin-top: 30px;
+            padding: 12px 25px;
+            background: var(--accent-color);
+            color: var(--text-light);
+            border: none;
+            border-radius: var(--border-radius-md);
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: background 0.3s ease, transform 0.2s ease;
+            width: 100%;
+        }
+
+        button[type="submit"]:hover {
+            background: #d3853b;
+            transform: translateY(-2px);
+        }
+
+        /* Mobile View & Responsive Design */
+        .mobile-toggle {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: var(--secondary-color);
+            color: var(--text-light);
+            font-size: 24px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease;
+        }
+
+        @media (max-width: 992px) {
+            .mobile-toggle {
+                display: flex;
+            }
+            .sidebar {
+                transform: translateX(-100%);
+                left: 0;
+                right: initial;
+                width: 250px;
+                max-width: 80vw;
+                box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            .main {
+                margin-left: 0;
+                padding: 20px;
+            }
+            .form-card {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="photo-container">
+                <a href="studentwelcome.html" class="home-icon" title="Home">
+                    <i class="fas fa-home"></i>
+                </a>
+                <img id="sidebarPhoto" class="sidebar-photo" style="display: none;" />
+            </div>
+            <h2>ID: <span id="userId">Loading...</span></h2>
+            <ul class="menu">
+                <li><a href="studentdetails.html"><i class="fas fa-user-circle"></i> Student details</a></li>
+                <li><a href="feedetails.html"><i class="fas fa-graduation-cap"></i> Fee details</a></li>
+                <li><a href="updaterefno.html"><i class="fas fa-sync-alt"></i> Update fee payment</a></li>
+                <li><a href="attendence.html"><i class="fas fa-calendar-alt"></i> View Attendance</a></li>
+                <li><a href="studentresults.html"><i class="fas fa-chart-bar"></i> Student Results</a></li>
+                <li><a href="generatenoc.html"><i class="fas fa-file-invoice"></i> Generate NOC</a></li>
+                <li class="active"><a href="settings.html"><i class="fas fa-cog"></i> Settings</a></li>
+            </ul>
+            <button class="logout" onclick="confirmLogout()">Logout</button>
+        </div>
+
+        <div class="main">
+            <div class="form-card">
+                <button class="back-btn" onclick="goBack()">
+                    <i class="fas fa-arrow-left"></i> Back to Settings
+                </button>
+                <h2>Help & Feedback</h2>
+                <p>If you have any questions or feedback, please fill out the form below. We will get back to you as soon as possible.</p>
+
+                <form id="feedbackForm">
+                    <label for="name">Your Name</label>
+                    <input type="text" id="name" placeholder="Enter your name" required />
+
+                    <label for="email">Your Email</label>
+                    <input type="email" id="email" placeholder="Enter your email" required />
+
+                    <label for="message">Message</label>
+                    <textarea id="message" rows="5" placeholder="Enter your message (at least 3 words)" required></textarea>
+
+                    <button type="submit">Submit</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-toggle" onclick="toggleMobileMenu()">
+        <i class="fas fa-bars"></i>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.20/dist/sweetalert2.all.min.js"></script>
+    <script>
+        function toggleMobileMenu() {
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        document.querySelectorAll(".menu li a").forEach(link => {
+            link.addEventListener("click", () => {
+                if (window.innerWidth <= 992) {
+                    document.querySelector('.sidebar').classList.remove('open');
+                }
+            });
+        });
+
+        function goBack() {
+            window.location.href = "settings.html";
+        }
+
+        function confirmLogout() {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: "You will be logged out of your account.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#0b2e59',
+                cancelButtonColor: '#f7a048',
+                confirmButtonText: 'Yes, log out!'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    logout();
+                }
+            });
+        }
+
+function logout() {
+    fetch("/logout", { method: "GET", credentials: "include" })
+      .then(() => {
+          localStorage.clear();
+          sessionStorage.clear();
+          if ("caches" in window) {
+              caches.keys().then(names => names.forEach(name => caches.delete(name)));
+          }
+          window.location.replace("index.html");
+      })
+      .catch(() => {
+          window.location.replace("index.html");
+      });
+}
+        // Prevent back navigation after logout
+        window.history.pushState(null, "", window.location.href);
+        window.onpopstate = () => window.history.pushState(null, "", window.location.href);
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const userId = localStorage.getItem("userId") || localStorage.getItem("regno");
+            if (!userId) {
+                Swal.fire({
+                    title: 'Access Denied',
+                    text: 'Please login first to view this page.',
+                    icon: 'error',
+                    confirmButtonText: 'Go to Login',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    confirmButtonColor: '#0b2e59'
+                }).then(() => {
+                    window.location.href = "index.html";
+                });
+                return;
+            }
+            document.getElementById("userId").textContent = userId;
+
+            // Load sidebar photo
+            fetch(`/student/${userId}`)
+                .then(res => res.json())
+                .then(data => {
+                    const photo = document.getElementById("sidebarPhoto");
+                    if (photo && data.photo_url) {
+                        photo.src = data.photo_url;
+                        photo.style.display = "block";
+                    }
+                })
+                .catch(err => {
+                    console.warn("⚠️ Failed to load photo:", err.message);
+                });
+
+            // Handle form submission
+            document.getElementById("feedbackForm").addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                const name = document.getElementById("name").value.trim();
+                const email = document.getElementById("email").value.trim();
+                const message = document.getElementById("message").value.trim();
+                const submitBtn = document.querySelector('button[type="submit"]');
+
+                if (message.split(" ").length < 3) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Message Too Short',
+                        text: 'Please enter at least 3 words.',
+                        confirmButtonColor: '#f7a048'
+                    });
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                submitBtn.innerText = "Sending...";
+
+                try {
+                    const res = await fetch("/api/submit-feedback", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name, email, message }),
+                    });
+
+                    const data = await res.json();
+
+                    if (data.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Feedback Sent',
+                            text: 'Your feedback has been sent successfully!',
+                            confirmButtonColor: '#0b2e59'
+                        });
+                        document.getElementById("feedbackForm").reset();
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Failed to Send',
+                            text: 'Something went wrong. Please try again.',
+                            confirmButtonColor: '#0b2e59'
+                        });
+                    }
+                } catch (err) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Network Error',
+                        text: 'Could not connect to the server. Please check your internet connection.',
+                        confirmButtonColor: '#0b2e59'
+                    });
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "Submit";
+                }
+            });
+        });
+    </script>
+    <script src="session.js"></script>
+</body>
+</html>
