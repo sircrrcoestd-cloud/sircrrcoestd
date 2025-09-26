@@ -7139,14 +7139,12 @@ app.get("/account-copy-fy/:userId", (req, res) => {
             (err, payments) => {
               if (err) return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
 
-              // --- Determine starting FY ---
               let startYear;
               if (/^21/.test(reg_no)) startYear = 2021;
               else if (/^22/.test(reg_no)) startYear = 2022;
               else if (/^23/.test(reg_no)) startYear = 2023;
               else startYear = new Date().getFullYear();
 
-              // --- Map payments by FY ---
               const paymentsByFY = {};
               (payments || []).forEach(p => {
                 if (!p.transaction_date) return;
@@ -7189,21 +7187,20 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const startX = 50;
               let startY = doc.y;
               const rowHeight = 25;
-              const tableColWidths = [80, 80, 80, 80, 80, 100, 80]; // Total ~580 width
+              const tableColWidths = [60, 60, 60, 60, 60, 80, 60, 60]; // Added a column for Prev Due
 
-              const headers = ["Academic Year", "F.Y", "Demand", "Amount Paid", "Bank Date", "Bank Ref No", "Amount Due"];
-              doc.fontSize(10).font("Helvetica-Bold");
+              const headers = ["Acad Year", "F.Y", "Prev Due", "Demand", "Amount Paid", "Bank Date", "Bank Ref No", "Amount Due"];
+              doc.fontSize(9).font("Helvetica-Bold"); // smaller font to fit amounts
 
               let currentX = startX;
               headers.forEach((h, i) => {
                 doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
-                doc.text(h, currentX + 5, startY + 7, { width: tableColWidths[i] - 10, align: "center" });
+                doc.text(h, currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                 currentX += tableColWidths[i];
               });
               startY += rowHeight;
 
-              // --- Table Rows ---
-              doc.font("Helvetica").fontSize(10);
+              doc.font("Helvetica").fontSize(9);
               let carryForwardDue = 0;
 
               feeRows.forEach((fee, idx) => {
@@ -7225,7 +7222,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 let paymentsArr = [];
                 if (paymentsByFY[fy] && paymentsByFY[fy].length) {
                   paymentsByFY[fy].forEach(pt => {
-                    // Only include payments within this FY
                     const d = new Date(pt.transaction_date);
                     const month = d.getMonth() + 1;
                     const year = d.getFullYear();
@@ -7237,26 +7233,27 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 }
 
                 const due = demand + carryForwardDue - paidTotal;
+                const prevDue = carryForwardDue;
                 carryForwardDue = due;
 
                 // Draw row
                 currentX = startX;
-                const rowValues = [academicYear, fy, demand, paidTotal || "", paymentsArr[0]?.parsedDate || "", paymentsArr[0]?.ref_no || "", due];
+                const rowValues = [academicYear, fy, prevDue, demand, paidTotal || "", paymentsArr[0]?.parsedDate || "", paymentsArr[0]?.ref_no || "", due];
                 rowValues.forEach((val, i) => {
                   doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
-                  doc.text(String(val), currentX + 5, startY + 7, { width: tableColWidths[i] - 10, align: "center" });
+                  doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                   currentX += tableColWidths[i];
                 });
                 startY += rowHeight;
 
-                // Add extra rows if multiple payments in FY
+                // Extra rows for multiple payments
                 for (let i = 1; i < paymentsArr.length; i++) {
                   currentX = startX;
-                  const extraValues = ["", "", "", paymentsArr[i].amount, paymentsArr[i].parsedDate, paymentsArr[i].ref_no, ""];
-                  extraValues.forEach((val, colIdx) => {
-                    doc.rect(currentX, startY, tableColWidths[colIdx], rowHeight).stroke();
-                    doc.text(String(val), currentX + 5, startY + 7, { width: tableColWidths[colIdx] - 10, align: "center" });
-                    currentX += tableColWidths[colIdx];
+                  const extraValues = ["", "", "", "", paymentsArr[i].amount, paymentsArr[i].parsedDate, paymentsArr[i].ref_no, ""];
+                  extraValues.forEach((val, j) => {
+                    doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
+                    doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: "center" });
+                    currentX += tableColWidths[j];
                   });
                   startY += rowHeight;
                 }
@@ -7268,18 +7265,18 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 const fyStartExtra = startYear + feeRows.length;
                 const fyEndExtra = fyStartExtra + 1;
                 const fy = `${fyStartExtra}-${fyEndExtra}`;
-                const extraValues = ["F.Y", fy, 0, 0, "-", "-", carryForwardDue];
+                const extraValues = ["F.Y", fy, carryForwardDue, 0, 0, "-", "-", carryForwardDue];
                 extraValues.forEach((val, i) => {
                   doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
-                  doc.text(String(val), currentX + 5, startY + 7, { width: tableColWidths[i] - 10, align: "center" });
+                  doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                   currentX += tableColWidths[i];
                 });
                 startY += rowHeight;
               }
 
-              // --- Footer ---
+              // Footer
               doc.moveDown(2);
-              doc.fontSize(12).fillColor("red").text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
+              doc.fontSize(11).fillColor("red").text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
 
               doc.end();
 
@@ -7296,9 +7293,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
-
-
-
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
 app.get(["/principal/all-subjects", "/correspondent/all-subjects"], (req, res) => {
