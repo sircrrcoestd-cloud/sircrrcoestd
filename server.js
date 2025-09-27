@@ -7113,6 +7113,17 @@ app.get("/api/accountcopy/download/:id", async (req, res) => {
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 
 // 🔹 Full Account Copy with FY, Payments, and Due Calculation (with logs + PDF printing)
+// Define Colors and Styles for PDF
+const PRIMARY_COLOR = "#0056b3"; // Professional Blue
+const ACCENT_COLOR = "#3498db";  // Lighter Blue/Accent
+const DUE_COLOR = "#e74c3c";     // Soft Red for Due Amount
+const HEADER_BG_COLOR = "#f0f0f0"; // Light Gray Background
+const TEXT_COLOR = "#333333";
+const LINE_COLOR = "#cccccc";
+const FONT_BASE = "Helvetica";
+const FONT_BOLD = "Helvetica-Bold";
+
+
 app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
 
@@ -7180,42 +7191,131 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const stream = fs.createWriteStream(filePath);
               doc.pipe(stream);
 
+              // --- Start PDF Styling ---
+
+              // Helper function to format currency (fixed to 2 decimals)
+              const formatAmount = (val) => {
+                  const num = parseFloat(val);
+                  return !isNaN(num) && val !== "" ? num.toFixed(2) : "";
+              };
+
               // --- College Header ---
-              doc.fontSize(16).font("Helvetica-Bold").text("CRR COLLEGE OF ENGINEERING", { align: "center" });
-              doc.fontSize(13).text("ACCOUNT COPY (Financial Year Wise)", { align: "center" });
-              doc.moveDown(1.2);
+              doc.fillColor(PRIMARY_COLOR)
+                 .fontSize(18)
+                 .font(FONT_BOLD)
+                 .text("CRR COLLEGE OF ENGINEERING", { align: "center" })
+                 .moveDown(0.2);
 
-              // --- Student Details ---
-              doc.fontSize(11).font("Helvetica-Bold");
+              doc.fillColor(TEXT_COLOR)
+                 .fontSize(12)
+                 .font(FONT_BOLD)
+                 .text("ACCOUNT COPY (Financial Year Wise)", { align: "center" })
+                 .moveDown(0.5);
+
+              // Add a dividing line
+              doc.strokeColor(ACCENT_COLOR)
+                 .lineWidth(2)
+                 .moveTo(50, doc.y)
+                 .lineTo(550, doc.y)
+                 .stroke()
+                 .moveDown(1.5);
+
+              // --- Student Details Box (Top Left/Right) ---
               let y = doc.y;
-              doc.text(`Reg No: ${reg_no}`, 50, y);
-              doc.text(`Unique ID: ${uniqueId}`, 320, y);
+              const boxY = y;
+              const boxHeight = 50;
+              const detailMargin = 8;
+              const detailLineHeight = 17;
+              const detailX1 = 60;
+              const detailX2 = 330;
 
-              y += 15;
-              doc.text(`Name: ${full_name}`, 50, y);
-              doc.text(`Branch: ${branch || "-"}`, 320, y);
+              // Draw the light background box
+              doc.fillColor(HEADER_BG_COLOR)
+                 .rect(50, boxY - 5, 500, boxHeight)
+                 .fill();
 
-              y += 15;
-              doc.text(`Section: ${section || "-"}`, 50, y);
+              doc.fillColor(TEXT_COLOR).fontSize(10);
+              doc.font(FONT_BOLD);
+
+              // Row 1
+              doc.text(`Reg No:`, detailX1, boxY + detailMargin);
+              doc.font(FONT_BASE).text(reg_no, detailX1 + 55, boxY + detailMargin);
+              doc.font(FONT_BOLD).text(`Unique ID:`, detailX2, boxY + detailMargin);
+              doc.font(FONT_BASE).text(uniqueId, detailX2 + 65, boxY + detailMargin);
+
+              // Row 2
+              doc.font(FONT_BOLD).text(`Name:`, detailX1, boxY + detailMargin + detailLineHeight);
+              doc.font(FONT_BASE).text(full_name, detailX1 + 55, boxY + detailMargin + detailLineHeight, { width: 180 });
+              doc.font(FONT_BOLD).text(`Branch:`, detailX2, boxY + detailMargin + detailLineHeight);
+              doc.font(FONT_BASE).text(branch || "-", detailX2 + 65, boxY + detailMargin + detailLineHeight);
+
+              // Row 3 (Section)
+              doc.font(FONT_BOLD).text(`Section:`, detailX1, boxY + detailMargin + detailLineHeight * 2);
+              doc.font(FONT_BASE).text(section || "-", detailX1 + 55, boxY + detailMargin + detailLineHeight * 2);
+
               doc.moveDown(1.5);
 
               // --- Table Headers ---
               const startX = 50;
               let startY = doc.y;
-              const rowHeight = 25;
+              const rowHeight = 22; // Slightly smaller row height
               const tableColWidths = [60, 60, 60, 60, 60, 80, 60, 60];
               const headers = ["Acad Year", "F.Y", "Prev Due", "Demand", "Amount Paid", "Bank Date", "Bank Ref No", "Amount Due"];
-              doc.fontSize(9).font("Helvetica-Bold");
+
+              // Draw Header background
+              doc.fillColor(PRIMARY_COLOR)
+                 .rect(startX, startY, tableColWidths.reduce((a, b) => a + b, 0), rowHeight)
+                 .fill();
+
+              doc.fillColor("#FFFFFF").fontSize(8).font(FONT_BOLD); // White text for header
+
               let currentX = startX;
               headers.forEach((h, i) => {
-                doc.rect(currentX, startY, tableColWidths[i], rowHeight).stroke();
                 doc.text(h, currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                 currentX += tableColWidths[i];
               });
+
               startY += rowHeight;
 
-              doc.font("Helvetica").fontSize(9);
+              // Reset fill color and font for table data
+              doc.fillColor(TEXT_COLOR).font(FONT_BASE).fontSize(8);
+              doc.strokeColor(LINE_COLOR).lineWidth(0.5); // Soft border lines
               let carryForwardDue = 0;
+
+              // --- Helper to draw a single row with correct alignment and formatting ---
+              const drawTableRow = (rowValues, isAfterGraduation = false) => {
+                  currentX = startX;
+                  let hasDrawnBackground = false;
+
+                  rowValues.forEach((val, j) => {
+                      // Apply alternating background color for rows not immediately following a payment group
+                      if (!hasDrawnBackground && (isAfterGraduation || rowValues[0] !== "")) {
+                          doc.rect(startX, startY, tableColWidths.reduce((a, b) => a + b, 0), rowHeight).fillOpacity(0.1).fill(HEADER_BG_COLOR).fillOpacity(1);
+                          doc.fillColor(TEXT_COLOR);
+                          hasDrawnBackground = true;
+                      }
+
+                      // Draw border
+                      doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
+
+                      // Format and align the text
+                      let displayVal = String(val);
+                      let align = "center";
+
+                      if (j === 2 || j === 3 || j === 4 || j === 7) { // Financial fields: Prev Due, Demand, Amount Paid, Amount Due
+                          displayVal = formatAmount(val);
+                          align = "right";
+                          if (j === 7 && parseFloat(val) < 0) doc.fillColor(DUE_COLOR); // Highlight negative (excess) due in red temporarily
+                      }
+
+                      // Position text
+                      doc.text(displayVal, currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: align });
+
+                      if (j === 7 && parseFloat(val) < 0) doc.fillColor(TEXT_COLOR); // Reset color after printing
+                      currentX += tableColWidths[j];
+                  });
+                  startY += rowHeight;
+              };
 
               // --- Iterate fee rows (Acad Years) ---
               feeRows.forEach((fee, idx) => {
@@ -7240,7 +7340,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
                 if (paymentsArr.length) {
                   paymentsArr.forEach((pt, i) => {
-                    currentX = startX;
                     const amountPaid = parseFloat(pt.amount) || 0;
                     runningDue -= amountPaid;
 
@@ -7252,25 +7351,14 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       amountPaid,
                       pt.parsedDate,
                       pt.ref_no || "",
-                      runningDue < 0 ? 0 : runningDue
+                      runningDue
                     ];
 
-                    rowValues.forEach((val, j) => {
-                      doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
-                      doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: "center" });
-                      currentX += tableColWidths[j];
-                    });
-                    startY += rowHeight;
+                    drawTableRow(rowValues);
                   });
                 } else {
-                  currentX = startX;
-                  const rowValues = [academicYear, fy, prevDue, demand, "", "", "", runningDue];
-                  rowValues.forEach((val, j) => {
-                    doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
-                    doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: "center" });
-                    currentX += tableColWidths[j];
-                  });
-                  startY += rowHeight;
+                  const rowValues = [academicYear, fy, prevDue, demand, 0, "", "", runningDue];
+                  drawTableRow(rowValues);
                 }
 
                 carryForwardDue = runningDue;
@@ -7283,26 +7371,29 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                   // Payments after last academic year
                   const paymentsArr = paymentsByFY[fy];
                   paymentsArr.forEach(pt => {
-                    currentX = startX;
                     const amountPaid = parseFloat(pt.amount) || 0;
                     carryForwardDue -= amountPaid;
 
                     const rowValues = [
-                      "", fy, "", "", amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue < 0 ? 0 : carryForwardDue
+                      "", fy, 0, 0, amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue
                     ];
-                    rowValues.forEach((val, j) => {
-                      doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
-                      doc.text(String(val), currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: "center" });
-                      currentX += tableColWidths[j];
-                    });
-                    startY += rowHeight;
+                    // Pass true to flag this as a row after initial academic years
+                    drawTableRow(rowValues, true); 
                   });
                 }
               });
 
               // Footer
               doc.moveDown(2);
-              doc.fontSize(11).fillColor("red").text(`Final Outstanding Due: ${carryForwardDue}`, { align: "right" });
+              
+              // Final Due Amount (Bold, Right Aligned)
+              doc.fontSize(12).font(FONT_BOLD).fillColor(DUE_COLOR);
+              doc.text(`Final Outstanding Due: ${formatAmount(carryForwardDue)}`, { align: "right" });
+              doc.moveDown(0.5);
+              
+              // System Generated Copy (Bottom Left)
+              doc.fontSize(8).font(FONT_BASE).fillColor(TEXT_COLOR);
+              doc.text("This is a system generated copy. Signature is not required.", 50, doc.page.height - 50);
 
               doc.end();
 
@@ -7319,6 +7410,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
+
 
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
