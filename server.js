@@ -7111,15 +7111,7 @@ app.get("/api/accountcopy/download/:id", async (req, res) => {
 
 // 🔹 Ignore favicon.ico request
 app.get("/favicon.ico", (req, res) => res.status(204).end());
-// The 'formatAmount' function is crucial and needs to be defined
-const formatAmount = (amount) => {
-    // This is a common way to format to Indian Rupees with two decimal places
-    if (isNaN(parseFloat(amount))) return '0.00';
-    return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-};
 
-
-// 🔹 Full Account Copy with FY, Payments, and Due Calculation (with logs + PDF printing)
 // --- PDF STYLING CONSTANTS (MUST be defined outside the route handler) ---
 const BRAND_COLOR = '#000080'; // Deep Navy Blue
 const ACCENT_COLOR = '#e9ecef'; // Light Gray for table header background
@@ -7130,19 +7122,45 @@ const LINE_COLOR = '#dee2e6'; // Lighter border color
 const DUE_COLOR = 'red';
 const FONT_BASE = "Helvetica";
 const FONT_BOLD = "Helvetica-Bold";
+
 // --- LOGO PATH ---
 const LOGO_PATH = path.join(__dirname, "public", "crrengglogo.png");
+
+// --- Helper Function (Crucial for formatting) ---
+const formatAmount = (amount) => {
+    // This is a common way to format to Indian Rupees with two decimal places and commas
+    if (isNaN(parseFloat(amount))) return '0.00';
+    return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
+
 app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
 
   // Check if logo file exists
   if (!fs.existsSync(LOGO_PATH)) {
     console.error(`❌ Logo file not found at: ${LOGO_PATH}`);
-    // If logo is critical, you might want to return an error, otherwise, continue without it.
-    // For this professional version, we'll log and continue with an empty space.
   }
 
   // NOTE: Assuming 'pool.query' and necessary database setup are available and correct.
+  // Placeholder database logic for full code presentation:
+  /*
+  const pool = { 
+    query: (sql, params, callback) => { 
+      // In a real application, replace this with your actual database logic (e.g., using mysql or pg)
+      // For demonstration, we'll assume the calls succeed and return mock data if pool were defined
+      if (sql.includes("students")) {
+        callback(null, [{ reg_no: '0000', uniqueId: 'MOCKID123', full_name: 'Mock Student Name', branch: 'CSE', section: 'A' }]);
+      } else if (sql.includes("student_fee_structure")) {
+        callback(null, [{ tuition: '100000', hostel: '0', bus: '5000', university: '1000', semester: '0', library: '0', fines: '0' }]);
+      } else if (sql.includes("sbi_uploaded_references")) {
+        callback(null, [{ feetype: 'Tuition', amount: '50000', transaction_date: '06/01/2023', sbi_ref_no: 'SBI123456' }]);
+      } else {
+        callback(null, []);
+      }
+    } 
+  };
+  */
 
   pool.query(
     "SELECT reg_no, name AS full_name, course AS branch, uniqueId, section FROM students WHERE reg_no = ? OR uniqueId = ?",
@@ -7186,7 +7204,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const paymentsByFY = {};
               (payments || []).forEach(p => {
                 if (!p.transaction_date) return;
-                // Assuming transaction_date is parsed correctly here. Adjust if format differs.
                 const d = new Date(p.transaction_date); 
                 if (isNaN(d.getTime())) return;
                 const month = d.getMonth() + 1;
@@ -7220,9 +7237,9 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const centerTextX = logoPlaceholderX + logoSize + 10;
               const centerTextWidth = totalTableWidth - logoSize - 10;
 
-              // --- 1. HEADER SECTION (Styled) ---
+              // --- 1. HEADER SECTION (Professional & Official) ---
               
-              // **ADD LOGO**
+              // **COLLEGE LOGO**
               if (fs.existsSync(LOGO_PATH)) {
                   doc.image(LOGO_PATH, logoPlaceholderX, yPosition, { width: logoSize, height: logoSize });
               } else {
@@ -7288,17 +7305,18 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
               yPosition += 30;
 
-              // --- 2. STUDENT DETAILS SECTION (Styled Box) ---
+              // --- 2. STUDENT DETAILS SECTION (Swapped Fields & Styled Box) ---
               const detailBoxY = yPosition;
               const detailLineHeight = 20;
 
-              // Student Details Box
+              // Student Details Box Border
               doc.rect(50, detailBoxY, totalTableWidth, detailLineHeight * 5.5)
-                 .strokeColor(BRAND_COLOR) // Use BRAND_COLOR for a more official border
+                 .strokeColor(BRAND_COLOR) 
                  .lineWidth(1.5)
                  .stroke();
 
-              doc.fillColor(ACCENT_COLOR).rect(50, detailBoxY, totalTableWidth, 25).fill(); // Highlight header of the box
+              // Box Header Highlight
+              doc.fillColor(ACCENT_COLOR).rect(50, detailBoxY, totalTableWidth, 25).fill(); 
 
               doc.fontSize(12)
                  .font(FONT_BOLD)
@@ -7307,26 +7325,28 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
               doc.fontSize(10).fillColor(TEXT_COLOR).font(FONT_BASE);
 
-              // Row 1
+              // Row 1: Name and Reg No (SWAPPED REG NO TO LEFT)
               doc.font(FONT_BOLD).text(`Name:`, 60, detailBoxY + 35);
               doc.font(FONT_BASE).text(full_name, 60 + 45, detailBoxY + 35, { width: 200 });
+              
               doc.font(FONT_BOLD).text(`Reg No:`, 300, detailBoxY + 35);
               doc.font(FONT_BASE).text(reg_no, 300 + 55, detailBoxY + 35);
 
-              // Row 2
-              doc.font(FONT_BOLD).text(`Branch:`, 60, detailBoxY + 35 + detailLineHeight);
-              doc.font(FONT_BASE).text(branch || "-", 60 + 45, detailBoxY + 35 + detailLineHeight, { width: 200 });
-              doc.font(FONT_BOLD).text(`Unique ID:`, 300, detailBoxY + 35 + detailLineHeight);
-              doc.font(FONT_BASE).text(uniqueId, 300 + 55, detailBoxY + 35 + detailLineHeight);
+              // Row 2: Unique ID and Branch (SWAPPED UNIQUE ID TO LEFT)
+              doc.font(FONT_BOLD).text(`Unique ID:`, 60, detailBoxY + 35 + detailLineHeight);
+              doc.font(FONT_BASE).text(uniqueId, 60 + 55, detailBoxY + 35 + detailLineHeight, { width: 200 });
               
-              // Row 3
+              doc.font(FONT_BOLD).text(`Branch:`, 300, detailBoxY + 35 + detailLineHeight);
+              doc.font(FONT_BASE).text(branch || "-", 300 + 55, detailBoxY + 35 + detailLineHeight);
+              
+              // Row 3: Section
               doc.font(FONT_BOLD).text(`Section:`, 60, detailBoxY + 35 + detailLineHeight * 2);
-              doc.font(FONT_BASE).text(section || "-", 60 + 45, detailBoxY + 35 + detailLineHeight * 2);
+              doc.font(FONT_BASE).text(section || "-", 60 + 55, detailBoxY + 35 + detailLineHeight * 2);
 
               yPosition = detailBoxY + detailLineHeight * 5.5 + 30;
 
 
-              // --- 3. FY-WISE RUNNING LEDGER TABLE (Styled) ---
+              // --- 3. FY-WISE RUNNING LEDGER TABLE (Professional Styling) ---
 
               doc.fontSize(12)
                  .font(FONT_BOLD)
@@ -7340,9 +7360,9 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const rowHeight = 22;
               const headers = ["Acad Year", "F.Y", "Prev Due (Rs.)", "Demand (Rs.)", "Paid (Rs.)", "Bank Date", "Bank Ref No", "Due/Overpaid (Rs.)"];
 
-              // Header Background
+              // Header Background (Deep Navy Blue)
               doc.rect(startX, startY, totalTableWidth, rowHeight)
-                 .fillColor(BRAND_COLOR) // Use BRAND_COLOR for a bold header
+                 .fillColor(BRAND_COLOR)
                  .fill();
               
               // Header Border
@@ -7373,7 +7393,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               let carryForwardDue = 0;
               let rowCounter = 0;
 
-              // --- Draw Row Helper ---
+              // --- Draw Row Helper (Enhanced Styling) ---
               const drawStyledRow = (rowValues) => {
                   currentX = startX;
                   const currentY = startY;
@@ -7400,13 +7420,13 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       doc.fillColor(TEXT_COLOR).font(FONT_BASE);
 
                       if (j === 2 || j === 3 || j === 4 || j === 7) { // Financial fields
-                          displayVal = String(val).includes('.') ? formatAmount(val) : formatAmount(parseFloat(val) || 0); // Ensure amount is formatted
+                          displayVal = String(val).includes('.') ? formatAmount(val) : formatAmount(parseFloat(val) || 0); 
                           align = "right";
                           if (j === 7) { // Final Due/Overpaid column
                              if (parseFloat(val) < 0) {
-                                doc.fillColor(BRAND_COLOR).font(FONT_BOLD); // Highlight excess payment (Negative due is overpaid) in BRAND_COLOR
+                                doc.fillColor(BRAND_COLOR).font(FONT_BOLD); // Overpaid (Credit) in Brand Color
                              } else if (parseFloat(val) > 0) {
-                                doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Highlight positive balance (still due) in RED
+                                doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Due (Debit) in Red
                              } else {
                                 doc.fillColor(TEXT_COLOR).font(FONT_BOLD);
                              }
@@ -7431,9 +7451,8 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                   rowCounter++;
               };
 
-              // --- Iterate fee rows (Acad Years) ---
+              // --- Iterate fee rows (Acad Years) & Payments ---
               feeRows.forEach((fee, idx) => {
-                // ... (Logic remains UNCHANGED)
                 const fyStartCurrent = startYear + idx;
                 const fyEndCurrent = fyStartCurrent + 1;
                 const fy = `${fyStartCurrent}-${fyEndCurrent}`;
@@ -7466,12 +7485,12 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       runningDue
                     ];
                     
+                    // Pagination Check & Header Redraw
                     if (doc.y + rowHeight > doc.page.height - 50) {
                       doc.addPage();
-                      startY = 50 + rowHeight; // Restart table headers on new page
+                      startY = 50 + rowHeight; 
                       rowCounter = 0;
                       
-                      // Redraw header on new page (using the simplified header draw for pagination)
                       currentX = startX;
                       doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(BRAND_COLOR).fill();
                       doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(BRAND_COLOR).lineWidth(0.8).stroke();
@@ -7489,11 +7508,12 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 } else {
                   const rowValues = [academicYear, fy, prevDue, demand, 0, "", "", runningDue];
                   
+                  // Pagination Check & Header Redraw
                   if (doc.y + rowHeight > doc.page.height - 50) {
                       doc.addPage();
-                      startY = 50 + rowHeight; // Restart table headers on new page
+                      startY = 50 + rowHeight; 
                       rowCounter = 0;
-                      // Redraw header on new page
+                      
                       currentX = startX;
                       doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(BRAND_COLOR).fill();
                       doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(BRAND_COLOR).lineWidth(0.8).stroke();
@@ -7512,7 +7532,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 carryForwardDue = runningDue;
               });
 
-              // --- Handle Payments AFTER Graduation (Same logic) ---
+              // --- Handle Payments AFTER Graduation ---
               Object.keys(paymentsByFY).forEach(fy => {
                 const fyStartCurrent = parseInt(fy.split("-")[0]);
                 if (fyStartCurrent >= startYear + feeRows.length) {
@@ -7525,11 +7545,12 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       "", fy, 0, 0, amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue
                     ];
 
+                    // Pagination Check & Header Redraw
                     if (doc.y + rowHeight > doc.page.height - 50) {
                       doc.addPage();
-                      startY = 50 + rowHeight; // Restart table headers on new page
+                      startY = 50 + rowHeight; 
                       rowCounter = 0;
-                      // Redraw header on new page
+                      
                       currentX = startX;
                       doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(BRAND_COLOR).fill();
                       doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(BRAND_COLOR).lineWidth(0.8).stroke();
@@ -7556,22 +7577,22 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                   doc.text(`FINAL OUTSTANDING DUE: Rs. ${formatAmount(carryForwardDue)}`, 50, yPosition, { align: "right", width: totalTableWidth });
               } else if (carryForwardDue < 0) {
                   doc.fillColor(BRAND_COLOR);
-                  doc.text(`ACCOUNT OVERPAID (REFUNDABLE): Rs. ${formatAmount(Math.abs(carryForwardDue))}`, 50, yPosition, { align: "right", width: totalTableWidth });
+                  doc.text(`ACCOUNT OVERPAID (REFUNDABLE): Rs. ${formatAmount(Math.abs(carryForwardDue))} (Credit)`, 50, yPosition, { align: "right", width: totalTableWidth });
               } else {
                   doc.fillColor(TEXT_COLOR);
                   doc.text(`ACCOUNT BALANCE: Rs. ${formatAmount(0)}`, 50, yPosition, { align: "right", width: totalTableWidth });
               }
 
-              // --- 4. ADD FOOTER TO ALL PAGES (Multi-page structure preserved) ---
+              // --- 4. FOOTER (Official & Consistent) ---
               const pageCount = doc.bufferedPageRange().count;
               
               for (let i = 0; i < pageCount; i++) {
                 doc.switchToPage(i);
                 
-                const footerY = 750; // Fixed position at bottom
+                const footerY = 750; 
                 
                 // Footer separator line
-                doc.strokeColor(BRAND_COLOR) // Use BRAND_COLOR for footer line
+                doc.strokeColor(BRAND_COLOR) 
                    .lineWidth(1)
                    .moveTo(50, footerY)
                    .lineTo(550, footerY)
