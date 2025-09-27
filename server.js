@@ -7113,26 +7113,28 @@ app.get("/api/accountcopy/download/:id", async (req, res) => {
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 
 // 🔹 Full Account Copy with FY, Payments, and Due Calculation (with logs + PDF printing)
-// Define Colors and Styles for PDF
-const PRIMARY_COLOR = "#0056b3"; // Professional Blue
-const ACCENT_COLOR = "#3498db";  // Lighter Blue/Accent
-const DUE_COLOR = "#e74c3c";     // Soft Red for Due Amount
-const HEADER_BG_COLOR = "#f0f0f0"; // Light Gray Background
-const TEXT_COLOR = "#333333";
-const LINE_COLOR = "#cccccc";
+// --- PDF STYLING CONSTANTS (MUST be defined outside the route handler) ---
+const BRAND_COLOR = '#000080'; // Deep Navy Blue
+const ACCENT_COLOR = '#e9ecef'; // Light Gray for table header background
+const BG_COLOR_EVEN = '#f8f9fa'; // Very light gray for alternating rows
+const TEXT_COLOR = '#333333';
+const GRAY_COLOR = '#6c757d'; // Standard Gray for details and borders
+const LINE_COLOR = '#dee2e6'; // Lighter border color
+const DUE_COLOR = 'red';
 const FONT_BASE = "Helvetica";
 const FONT_BOLD = "Helvetica-Bold";
 
+// Helper function to format currency (fixed to 2 decimals)
+const formatAmount = (val) => {
+    const num = parseFloat(val);
+    // Ensure it's treated as 0 if null/NaN for consistency
+    if (isNaN(num) || val === "") return "0.00"; 
+    return num.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+};
+
+
 app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
-
-  // Helper function to format currency (fixed to 2 decimals)
-  const formatAmount = (val) => {
-      const num = parseFloat(val);
-      // Ensure it's treated as 0 if null/NaN for consistency
-      if (isNaN(num) || val === "") return "0.00"; 
-      return num.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-  };
 
   pool.query(
     "SELECT reg_no, name AS full_name, course AS branch, uniqueId, section FROM students WHERE reg_no = ? OR uniqueId = ?",
@@ -7176,8 +7178,9 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const paymentsByFY = {};
               (payments || []).forEach(p => {
                 if (!p.transaction_date) return;
-                const d = new Date(p.transaction_date);
-                if (isNaN(d)) return;
+                // Assuming transaction_date is parsed correctly here. Adjust if format differs.
+                const d = new Date(p.transaction_date); 
+                if (isNaN(d.getTime())) return;
                 const month = d.getMonth() + 1;
                 const year = d.getFullYear();
                 const dd = String(d.getDate()).padStart(2, "0");
@@ -7207,13 +7210,13 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
               // --- 1. HEADER SECTION (Styled) ---
               
-              // Mock Logo Placeholder (Since the original logic didn't fetch an image)
+              // Mock Logo Placeholder
               const logoPlaceholderX = 50;
               const logoPlaceholderY = yPosition;
               doc.rect(logoPlaceholderX, logoPlaceholderY, 60, 60)
                  .fillColor('#dddddd')
                  .fill()
-                 .strokeColor(GRAY_COLOR)
+                 .strokeColor(GRAY_COLOR) // Now correctly defined
                  .lineWidth(1)
                  .stroke();
               doc.fontSize(8).fillColor(GRAY_COLOR).text("LOGO", logoPlaceholderX + 15, logoPlaceholderY + 27);
@@ -7388,9 +7391,9 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                           displayVal = formatAmount(val);
                           align = "right";
                           if (j === 7 && parseFloat(val) < 0) {
-                             doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Highlight excess payment
+                             doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Highlight excess payment (Negative due is overpaid)
                           } else if (j === 7 && parseFloat(val) > 0) {
-                            doc.font(FONT_BOLD); // Highlight positive balance
+                            doc.font(FONT_BOLD); // Highlight positive balance (still due)
                           }
                       }
 
@@ -7489,7 +7492,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 carryForwardDue = runningDue;
               });
 
-              // --- Handle Payments AFTER Graduation ---
+              // --- Handle Payments AFTER Graduation (Same logic) ---
               Object.keys(paymentsByFY).forEach(fy => {
                 const fyStartCurrent = parseInt(fy.split("-")[0]);
                 if (fyStartCurrent >= startYear + feeRows.length) {
@@ -7569,6 +7572,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               stream.on("finish", () => {
                 res.download(filePath, `${reg_no}_account_copy.pdf`, (err) => {
                   if (err) console.error("❌ Download error:", err);
+                  // Clean up the file after download
                   fs.unlink(filePath, () => {});
                 });
               });
@@ -7579,6 +7583,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
+
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
 app.get(["/principal/all-subjects", "/correspondent/all-subjects"], (req, res) => {
