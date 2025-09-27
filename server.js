@@ -7123,9 +7123,16 @@ const LINE_COLOR = "#cccccc";
 const FONT_BASE = "Helvetica";
 const FONT_BOLD = "Helvetica-Bold";
 
-
 app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
+
+  // Helper function to format currency (fixed to 2 decimals)
+  const formatAmount = (val) => {
+      const num = parseFloat(val);
+      // Ensure it's treated as 0 if null/NaN for consistency
+      if (isNaN(num) || val === "") return "0.00"; 
+      return num.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+  };
 
   pool.query(
     "SELECT reg_no, name AS full_name, course AS branch, uniqueId, section FROM students WHERE reg_no = ? OR uniqueId = ?",
@@ -7154,19 +7161,18 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               if (err)
                 return res.status(500).json({ success: false, message: "Internal Server Error - Payments Query" });
 
-              // --- Derive start year dynamically from reg_no ---
+              // --- Derive start year dynamically (LOGIC UNCHANGED) ---
               let startYear;
-              const regDigits = reg_no.match(/^(\d{2,4})/); // capture 2–4 digit prefix
+              const regDigits = reg_no.match(/^(\d{2,4})/); 
               if (regDigits) {
                 let yr = parseInt(regDigits[1], 10);
-                // if it's 2-digit like "21" → 2021, "34" → 2034
                 if (yr < 100) yr += 2000;
                 startYear = yr;
               } else {
                 startYear = new Date().getFullYear();
               }
 
-              // --- Group payments into FY buckets ---
+              // --- Group payments into FY buckets (LOGIC UNCHANGED) ---
               const paymentsByFY = {};
               (payments || []).forEach(p => {
                 if (!p.transaction_date) return;
@@ -7186,151 +7192,234 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const uploadsDir = path.join(__dirname, "uploads");
               if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-              const doc = new PDFDocument({ margin: 50, size: "A4" });
+              const doc = new PDFDocument({ margin: 50, size: "A4", bufferPages: true });
               const filePath = path.join(uploadsDir, `${reg_no}_account_copy.pdf`);
               const stream = fs.createWriteStream(filePath);
               doc.pipe(stream);
 
-              // --- Start PDF Styling ---
+              const now = new Date();
+              const currentDate = now.toLocaleDateString('en-IN');
+              const currentTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+              
+              let yPosition = 50;
+              const tableColWidths = [60, 60, 60, 60, 60, 80, 60, 60];
+              const totalTableWidth = tableColWidths.reduce((a, b) => a + b, 0); // 500
 
-              // Helper function to format currency (fixed to 2 decimals)
-              const formatAmount = (val) => {
-                  const num = parseFloat(val);
-                  return !isNaN(num) && val !== "" ? num.toFixed(2) : "";
-              };
-
-              // --- College Header ---
-              doc.fillColor(PRIMARY_COLOR)
-                 .fontSize(18)
+              // --- 1. HEADER SECTION (Styled) ---
+              
+              // Mock Logo Placeholder (Since the original logic didn't fetch an image)
+              const logoPlaceholderX = 50;
+              const logoPlaceholderY = yPosition;
+              doc.rect(logoPlaceholderX, logoPlaceholderY, 60, 60)
+                 .fillColor('#dddddd')
+                 .fill()
+                 .strokeColor(GRAY_COLOR)
+                 .lineWidth(1)
+                 .stroke();
+              doc.fontSize(8).fillColor(GRAY_COLOR).text("LOGO", logoPlaceholderX + 15, logoPlaceholderY + 27);
+              
+              // College Name and Details (Center)
+              doc.fontSize(16)
                  .font(FONT_BOLD)
-                 .text("CRR COLLEGE OF ENGINEERING", { align: "center" })
-                 .moveDown(0.2);
+                 .fillColor(BRAND_COLOR)
+                 .text("SIR C R REDDY COLLEGE OF ENGINEERING", 120, yPosition + 8, {
+                   align: 'center',
+                   width: 360
+                 });
 
-              doc.fillColor(TEXT_COLOR)
-                 .fontSize(12)
+              doc.fontSize(12)
+                 .font(FONT_BASE)
+                 .fillColor(TEXT_COLOR)
+                 .text("VATLURU, ELURU- 534007", 120, yPosition + 28, {
+                   align: 'center',
+                   width: 360
+                 });
+
+              doc.fontSize(10)
+                 .font(FONT_BASE)
+                 .fillColor(GRAY_COLOR)
+                 .text("Accredited by NBA & NAAC with (A) | Approved by AICTE | Affiliated to JNTUK", 120, yPosition + 45, {
+                   align: 'center',
+                   width: 360
+                 });
+
+              yPosition += 80;
+
+              // Horizontal Line
+              doc.strokeColor(TEXT_COLOR)
+                 .lineWidth(1)
+                 .moveTo(50, yPosition)
+                 .lineTo(550, yPosition)
+                 .stroke();
+
+              yPosition += 20;
+
+              // Document Title
+              doc.fontSize(14)
                  .font(FONT_BOLD)
-                 .text("ACCOUNT COPY (Financial Year Wise)", { align: "center" })
-                 .moveDown(0.5);
+                 .fillColor(TEXT_COLOR)
+                 .text("STUDENT FEE ACCOUNT STATEMENT (FY-WISE)", {
+                   align: 'center',
+                   underline: true
+                 });
 
-              // Add a dividing line
-              doc.strokeColor(ACCENT_COLOR)
-                 .lineWidth(2)
-                 .moveTo(50, doc.y)
-                 .lineTo(550, doc.y)
-                 .stroke()
-                 .moveDown(1.5);
+              yPosition = doc.y + 20;
 
-              // --- Student Details Box (Top Left/Right) ---
-              let y = doc.y;
-              const boxY = y;
-              const boxHeight = 50;
-              const detailMargin = 8;
-              const detailLineHeight = 17;
-              const detailX1 = 60;
-              const detailX2 = 330;
+              // Generated Date (Right aligned)
+              doc.fontSize(9)
+                 .fillColor(GRAY_COLOR)
+                 .text(`Generated: ${currentDate} ${currentTime}`, 400, yPosition, {
+                   width: 145,
+                   align: 'right'
+                 });
 
-              // Draw the light background box
-              doc.fillColor(HEADER_BG_COLOR)
-                 .rect(50, boxY - 5, 500, boxHeight)
-                 .fill();
+              yPosition += 30;
 
-              doc.fillColor(TEXT_COLOR).fontSize(10);
-              doc.font(FONT_BOLD);
+              // --- 2. STUDENT DETAILS SECTION (Styled Box) ---
+              const detailBoxY = yPosition;
+              const detailLineHeight = 20;
+
+              // Student Details Box
+              doc.rect(50, detailBoxY, totalTableWidth, detailLineHeight * 5.5)
+                 .strokeColor(TEXT_COLOR)
+                 .lineWidth(0.8)
+                 .stroke();
+
+              doc.fontSize(12)
+                 .font(FONT_BOLD)
+                 .fillColor(BRAND_COLOR)
+                 .text("STUDENT DETAILS", 60, detailBoxY + 12, { underline: true });
+
+              doc.fontSize(10).fillColor(TEXT_COLOR).font(FONT_BASE);
 
               // Row 1
-              doc.text(`Reg No:`, detailX1, boxY + detailMargin);
-              doc.font(FONT_BASE).text(reg_no, detailX1 + 55, boxY + detailMargin);
-              doc.font(FONT_BOLD).text(`Unique ID:`, detailX2, boxY + detailMargin);
-              doc.font(FONT_BASE).text(uniqueId, detailX2 + 65, boxY + detailMargin);
+              doc.font(FONT_BOLD).text(`Name:`, 60, detailBoxY + 35);
+              doc.font(FONT_BASE).text(full_name, 60 + 45, detailBoxY + 35, { width: 200 });
+              doc.font(FONT_BOLD).text(`Reg No:`, 300, detailBoxY + 35);
+              doc.font(FONT_BASE).text(reg_no, 300 + 55, detailBoxY + 35);
 
               // Row 2
-              doc.font(FONT_BOLD).text(`Name:`, detailX1, boxY + detailMargin + detailLineHeight);
-              doc.font(FONT_BASE).text(full_name, detailX1 + 55, boxY + detailMargin + detailLineHeight, { width: 180 });
-              doc.font(FONT_BOLD).text(`Branch:`, detailX2, boxY + detailMargin + detailLineHeight);
-              doc.font(FONT_BASE).text(branch || "-", detailX2 + 65, boxY + detailMargin + detailLineHeight);
+              doc.font(FONT_BOLD).text(`Branch:`, 60, detailBoxY + 35 + detailLineHeight);
+              doc.font(FONT_BASE).text(branch || "-", 60 + 45, detailBoxY + 35 + detailLineHeight, { width: 200 });
+              doc.font(FONT_BOLD).text(`Unique ID:`, 300, detailBoxY + 35 + detailLineHeight);
+              doc.font(FONT_BASE).text(uniqueId, 300 + 55, detailBoxY + 35 + detailLineHeight);
+              
+              // Row 3
+              doc.font(FONT_BOLD).text(`Section:`, 60, detailBoxY + 35 + detailLineHeight * 2);
+              doc.font(FONT_BASE).text(section || "-", 60 + 45, detailBoxY + 35 + detailLineHeight * 2);
 
-              // Row 3 (Section)
-              doc.font(FONT_BOLD).text(`Section:`, detailX1, boxY + detailMargin + detailLineHeight * 2);
-              doc.font(FONT_BASE).text(section || "-", detailX1 + 55, boxY + detailMargin + detailLineHeight * 2);
+              yPosition = detailBoxY + detailLineHeight * 5.5 + 30;
 
-              doc.moveDown(1.5);
 
-              // --- Table Headers ---
+              // --- 3. FY-WISE RUNNING LEDGER TABLE (Styled) ---
+
+              doc.fontSize(12)
+                 .font(FONT_BOLD)
+                 .fillColor(TEXT_COLOR)
+                 .text("FINANCIAL YEAR WISE LEDGER", 50, yPosition, { underline: true });
+
+              yPosition += 25;
+
               const startX = 50;
-              let startY = doc.y;
-              const rowHeight = 22; // Slightly smaller row height
-              const tableColWidths = [60, 60, 60, 60, 60, 80, 60, 60];
+              let startY = yPosition;
+              const rowHeight = 22;
               const headers = ["Acad Year", "F.Y", "Prev Due", "Demand", "Amount Paid", "Bank Date", "Bank Ref No", "Amount Due"];
 
-              // Draw Header background
-              doc.fillColor(PRIMARY_COLOR)
-                 .rect(startX, startY, tableColWidths.reduce((a, b) => a + b, 0), rowHeight)
+              // Header Background
+              doc.rect(startX, startY, totalTableWidth, rowHeight)
+                 .fillColor(ACCENT_COLOR)
                  .fill();
+              
+              // Header Border
+              doc.rect(startX, startY, totalTableWidth, rowHeight)
+                 .strokeColor(TEXT_COLOR)
+                 .lineWidth(0.8)
+                 .stroke();
 
-              doc.fillColor("#FFFFFF").fontSize(8).font(FONT_BOLD); // White text for header
+              doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD); 
 
               let currentX = startX;
               headers.forEach((h, i) => {
+                // Draw internal column lines
+                doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke();
+                
+                // Print Header Text
                 doc.text(h, currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
                 currentX += tableColWidths[i];
               });
+              
+              // Draw last column line
+              doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke();
 
               startY += rowHeight;
 
               // Reset fill color and font for table data
               doc.fillColor(TEXT_COLOR).font(FONT_BASE).fontSize(8);
-              doc.strokeColor(LINE_COLOR).lineWidth(0.5); // Soft border lines
               let carryForwardDue = 0;
+              let rowCounter = 0;
 
-              // --- Helper to draw a single row with correct alignment and formatting ---
-              const drawTableRow = (rowValues, isAfterGraduation = false) => {
+              // --- Draw Row Helper ---
+              const drawStyledRow = (rowValues, isAfterGraduation = false) => {
                   currentX = startX;
-                  let hasDrawnBackground = false;
+                  const currentY = startY;
+
+                  // Alternating row background
+                  if (rowCounter % 2 !== 0) {
+                      doc.rect(startX, currentY, totalTableWidth, rowHeight)
+                         .fillColor(BG_COLOR_EVEN)
+                         .fill();
+                  }
+
+                  // Row border (Top and Bottom)
+                  doc.rect(startX, currentY, totalTableWidth, rowHeight)
+                     .strokeColor(LINE_COLOR)
+                     .lineWidth(0.5)
+                     .stroke();
 
                   rowValues.forEach((val, j) => {
-                      // Apply alternating background color for rows not immediately following a payment group
-                      if (!hasDrawnBackground && (isAfterGraduation || rowValues[0] !== "")) {
-                          doc.rect(startX, startY, tableColWidths.reduce((a, b) => a + b, 0), rowHeight).fillOpacity(0.1).fill(HEADER_BG_COLOR).fillOpacity(1);
-                          doc.fillColor(TEXT_COLOR);
-                          hasDrawnBackground = true;
-                      }
+                      // Draw internal column line
+                      doc.strokeColor(LINE_COLOR).lineWidth(0.5).moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke();
 
-                      // Draw border
-                      doc.rect(currentX, startY, tableColWidths[j], rowHeight).stroke();
-
-                      // Format and align the text
                       let displayVal = String(val);
                       let align = "center";
+                      doc.fillColor(TEXT_COLOR);
 
-                      if (j === 2 || j === 3 || j === 4 || j === 7) { // Financial fields: Prev Due, Demand, Amount Paid, Amount Due
+                      if (j === 2 || j === 3 || j === 4 || j === 7) { // Financial fields
                           displayVal = formatAmount(val);
                           align = "right";
-                          if (j === 7 && parseFloat(val) < 0) doc.fillColor(DUE_COLOR); // Highlight negative (excess) due in red temporarily
+                          if (j === 7 && parseFloat(val) < 0) {
+                             doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Highlight excess payment
+                          } else if (j === 7 && parseFloat(val) > 0) {
+                            doc.font(FONT_BOLD); // Highlight positive balance
+                          }
                       }
 
                       // Position text
-                      doc.text(displayVal, currentX + 2, startY + 7, { width: tableColWidths[j] - 4, align: align });
+                      doc.text(displayVal, currentX + 2, currentY + 7, { width: tableColWidths[j] - 4, align: align });
+                      
+                      doc.fillColor(TEXT_COLOR).font(FONT_BASE); // Reset font and color
 
-                      if (j === 7 && parseFloat(val) < 0) doc.fillColor(TEXT_COLOR); // Reset color after printing
                       currentX += tableColWidths[j];
                   });
+                  // Draw last column line
+                  doc.strokeColor(LINE_COLOR).lineWidth(0.5).moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke();
+                  
                   startY += rowHeight;
+                  rowCounter++;
               };
 
               // --- Iterate fee rows (Acad Years) ---
               feeRows.forEach((fee, idx) => {
+                // ... (Logic remains UNCHANGED)
                 const fyStartCurrent = startYear + idx;
                 const fyEndCurrent = fyStartCurrent + 1;
                 const fy = `${fyStartCurrent}-${fyEndCurrent}`;
                 const academicYear = idx + 1;
 
                 const demand =
-                  (parseFloat(fee.tuition) || 0) +
-                  (parseFloat(fee.hostel) || 0) +
-                  (parseFloat(fee.bus) || 0) +
-                  (parseFloat(fee.university) || 0) +
-                  (parseFloat(fee.semester) || 0) +
-                  (parseFloat(fee.library) || 0) +
+                  (parseFloat(fee.tuition) || 0) + (parseFloat(fee.hostel) || 0) +
+                  (parseFloat(fee.bus) || 0) + (parseFloat(fee.university) || 0) +
+                  (parseFloat(fee.semester) || 0) + (parseFloat(fee.library) || 0) +
                   (parseFloat(fee.fines) || 0);
 
                 const prevDue = carryForwardDue;
@@ -7346,19 +7435,55 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                     const rowValues = [
                       i === 0 ? academicYear : "",
                       i === 0 ? fy : "",
-                      i === 0 ? prevDue : "",
-                      i === 0 ? demand : "",
+                      i === 0 ? formatAmount(prevDue) : "",
+                      i === 0 ? formatAmount(demand) : "",
                       amountPaid,
                       pt.parsedDate,
                       pt.ref_no || "",
                       runningDue
                     ];
-
-                    drawTableRow(rowValues);
+                    
+                    if (doc.y + rowHeight > doc.page.height - 50) {
+                      doc.addPage();
+                      startY = 50 + rowHeight; // Restart table headers on new page
+                      rowCounter = 0;
+                      
+                      // Redraw header on new page (using the simplified header draw for pagination)
+                      currentX = startX;
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(ACCENT_COLOR).fill();
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(TEXT_COLOR).lineWidth(0.8).stroke();
+                      doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD);
+                      headers.forEach((h, i) => {
+                          doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                          doc.text(h, currentX + 2, 50 + 7, { width: tableColWidths[i] - 4, align: "center" });
+                          currentX += tableColWidths[i];
+                      });
+                      doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                    }
+                    
+                    drawStyledRow(rowValues);
                   });
                 } else {
-                  const rowValues = [academicYear, fy, prevDue, demand, 0, "", "", runningDue];
-                  drawTableRow(rowValues);
+                  const rowValues = [academicYear, fy, formatAmount(prevDue), formatAmount(demand), 0, "", "", runningDue];
+                  
+                  if (doc.y + rowHeight > doc.page.height - 50) {
+                      doc.addPage();
+                      startY = 50 + rowHeight; // Restart table headers on new page
+                      rowCounter = 0;
+                      // Redraw header on new page
+                      currentX = startX;
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(ACCENT_COLOR).fill();
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(TEXT_COLOR).lineWidth(0.8).stroke();
+                      doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD);
+                      headers.forEach((h, i) => {
+                          doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                          doc.text(h, currentX + 2, 50 + 7, { width: tableColWidths[i] - 4, align: "center" });
+                          currentX += tableColWidths[i];
+                      });
+                      doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                  }
+
+                  drawStyledRow(rowValues);
                 }
 
                 carryForwardDue = runningDue;
@@ -7368,32 +7493,76 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               Object.keys(paymentsByFY).forEach(fy => {
                 const fyStartCurrent = parseInt(fy.split("-")[0]);
                 if (fyStartCurrent >= startYear + feeRows.length) {
-                  // Payments after last academic year
                   const paymentsArr = paymentsByFY[fy];
                   paymentsArr.forEach(pt => {
                     const amountPaid = parseFloat(pt.amount) || 0;
                     carryForwardDue -= amountPaid;
 
                     const rowValues = [
-                      "", fy, 0, 0, amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue
+                      "", fy, formatAmount(0), formatAmount(0), amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue
                     ];
-                    // Pass true to flag this as a row after initial academic years
-                    drawTableRow(rowValues, true); 
+
+                    if (doc.y + rowHeight > doc.page.height - 50) {
+                      doc.addPage();
+                      startY = 50 + rowHeight; // Restart table headers on new page
+                      rowCounter = 0;
+                      // Redraw header on new page
+                      currentX = startX;
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(ACCENT_COLOR).fill();
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(TEXT_COLOR).lineWidth(0.8).stroke();
+                      doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD);
+                      headers.forEach((h, i) => {
+                          doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                          doc.text(h, currentX + 2, 50 + 7, { width: tableColWidths[i] - 4, align: "center" });
+                          currentX += tableColWidths[i];
+                      });
+                      doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                    }
+
+                    drawStyledRow(rowValues, true);
                   });
                 }
               });
-
-              // Footer
-              doc.moveDown(2);
               
-              // Final Due Amount (Bold, Right Aligned)
+              yPosition = startY + 30;
+              
+              // --- Final Due Amount (Prominent) ---
               doc.fontSize(12).font(FONT_BOLD).fillColor(DUE_COLOR);
-              doc.text(`Final Outstanding Due: ${formatAmount(carryForwardDue)}`, { align: "right" });
-              doc.moveDown(0.5);
+              doc.text(`Final Outstanding Due: Rs. ${formatAmount(carryForwardDue)}`, 50, yPosition, { align: "right", width: totalTableWidth });
+
+              // --- 4. ADD FOOTER TO ALL PAGES (Multi-page structure preserved) ---
+              const pageCount = doc.bufferedPageRange().count;
               
-              // System Generated Copy (Bottom Left)
-              doc.fontSize(8).font(FONT_BASE).fillColor(TEXT_COLOR);
-              doc.text("This is a system generated copy. Signature is not required.", 50, doc.page.height - 50);
+              for (let i = 0; i < pageCount; i++) {
+                doc.switchToPage(i);
+                
+                const footerY = 750; // Fixed position at bottom
+                
+                // Footer separator line
+                doc.strokeColor(LINE_COLOR)
+                   .lineWidth(0.5)
+                   .moveTo(50, footerY)
+                   .lineTo(550, footerY)
+                   .stroke();
+                
+                // Footer text - computer generated notice (centered)
+                doc.fontSize(8)
+                   .fillColor(GRAY_COLOR)
+                   .text("This is a computer-generated document and does not require a signature.",
+                         50, footerY + 10, {
+                             width: 500,
+                             align: 'center'
+                         });
+                
+                // Copyright and generation info (centered)
+                doc.fontSize(7)
+                   .fillColor(GRAY_COLOR)
+                   .text(`Generated on ${currentDate} at ${currentTime} | © Sir C R Reddy College of Engineering, Eluru District`,
+                         50, footerY + 25, {
+                             width: 500,
+                             align: 'center'
+                         });
+              }
 
               doc.end();
 
@@ -7410,8 +7579,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
-
-
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
 app.get(["/principal/all-subjects", "/correspondent/all-subjects"], (req, res) => {
