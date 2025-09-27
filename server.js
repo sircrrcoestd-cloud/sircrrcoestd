@@ -7111,6 +7111,13 @@ app.get("/api/accountcopy/download/:id", async (req, res) => {
 
 // 🔹 Ignore favicon.ico request
 app.get("/favicon.ico", (req, res) => res.status(204).end());
+// The 'formatAmount' function is crucial and needs to be defined
+const formatAmount = (amount) => {
+    // This is a common way to format to Indian Rupees with two decimal places
+    if (isNaN(parseFloat(amount))) return '0.00';
+    return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
 
 // 🔹 Full Account Copy with FY, Payments, and Due Calculation (with logs + PDF printing)
 // --- PDF STYLING CONSTANTS (MUST be defined outside the route handler) ---
@@ -7123,10 +7130,19 @@ const LINE_COLOR = '#dee2e6'; // Lighter border color
 const DUE_COLOR = 'red';
 const FONT_BASE = "Helvetica";
 const FONT_BOLD = "Helvetica-Bold";
-
-
+// --- LOGO PATH ---
+const LOGO_PATH = path.join(__dirname, "public", "crrengglogo.png");
 app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
+
+  // Check if logo file exists
+  if (!fs.existsSync(LOGO_PATH)) {
+    console.error(`❌ Logo file not found at: ${LOGO_PATH}`);
+    // If logo is critical, you might want to return an error, otherwise, continue without it.
+    // For this professional version, we'll log and continue with an empty space.
+  }
+
+  // NOTE: Assuming 'pool.query' and necessary database setup are available and correct.
 
   pool.query(
     "SELECT reg_no, name AS full_name, course AS branch, uniqueId, section FROM students WHERE reg_no = ? OR uniqueId = ?",
@@ -7194,54 +7210,56 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
               const now = new Date();
               const currentDate = now.toLocaleDateString('en-IN');
-              const currentTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+              const currentTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
               
               let yPosition = 50;
               const tableColWidths = [60, 60, 60, 60, 60, 80, 60, 60];
               const totalTableWidth = tableColWidths.reduce((a, b) => a + b, 0); // 500
+              const logoSize = 60;
+              const logoPlaceholderX = 50;
+              const centerTextX = logoPlaceholderX + logoSize + 10;
+              const centerTextWidth = totalTableWidth - logoSize - 10;
 
               // --- 1. HEADER SECTION (Styled) ---
               
-              // Mock Logo Placeholder
-              const logoPlaceholderX = 50;
-              const logoPlaceholderY = yPosition;
-              doc.rect(logoPlaceholderX, logoPlaceholderY, 60, 60)
-                 .fillColor('#dddddd')
-                 .fill()
-                 .strokeColor(GRAY_COLOR) // Now correctly defined
-                 .lineWidth(1)
-                 .stroke();
-              doc.fontSize(8).fillColor(GRAY_COLOR).text("LOGO", logoPlaceholderX + 15, logoPlaceholderY + 27);
+              // **ADD LOGO**
+              if (fs.existsSync(LOGO_PATH)) {
+                  doc.image(LOGO_PATH, logoPlaceholderX, yPosition, { width: logoSize, height: logoSize });
+              } else {
+                  // Fallback for logo missing
+                  doc.rect(logoPlaceholderX, yPosition, logoSize, logoSize).fillColor('#dddddd').fill().strokeColor(GRAY_COLOR).lineWidth(1).stroke();
+                  doc.fontSize(8).fillColor(GRAY_COLOR).text("LOGO MISSING", logoPlaceholderX + 5, yPosition + 25, { width: 50, align: 'center' });
+              }
               
-              // College Name and Details (Center)
+              // College Name and Details (Center Aligned relative to the right of the logo)
               doc.fontSize(16)
                  .font(FONT_BOLD)
                  .fillColor(BRAND_COLOR)
-                 .text("SIR C R REDDY COLLEGE OF ENGINEERING", 120, yPosition + 8, {
+                 .text("SIR C R REDDY COLLEGE OF ENGINEERING", centerTextX, yPosition + 8, {
                    align: 'center',
-                   width: 360
+                   width: centerTextWidth
                  });
 
               doc.fontSize(12)
                  .font(FONT_BASE)
                  .fillColor(TEXT_COLOR)
-                 .text("VATLURU, ELURU- 534007", 120, yPosition + 28, {
+                 .text("VATLURU, ELURU- 534007", centerTextX, yPosition + 28, {
                    align: 'center',
-                   width: 360
+                   width: centerTextWidth
                  });
 
               doc.fontSize(10)
                  .font(FONT_BASE)
                  .fillColor(GRAY_COLOR)
-                 .text("Accredited by NBA & NAAC with (A) | Approved by AICTE | Affiliated to JNTUK", 120, yPosition + 45, {
+                 .text("Accredited by NBA & NAAC with (A) | Approved by AICTE | Affiliated to JNTUK", centerTextX, yPosition + 45, {
                    align: 'center',
-                   width: 360
+                   width: centerTextWidth
                  });
 
               yPosition += 80;
 
               // Horizontal Line
-              doc.strokeColor(TEXT_COLOR)
+              doc.strokeColor(BRAND_COLOR)
                  .lineWidth(1)
                  .moveTo(50, yPosition)
                  .lineTo(550, yPosition)
@@ -7253,7 +7271,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               doc.fontSize(14)
                  .font(FONT_BOLD)
                  .fillColor(TEXT_COLOR)
-                 .text("STUDENT FEE ACCOUNT STATEMENT (FY-WISE)", {
+                 .text("OFFICIAL STUDENT FEE ACCOUNT STATEMENT (FY-WISE)", {
                    align: 'center',
                    underline: true
                  });
@@ -7276,14 +7294,16 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
               // Student Details Box
               doc.rect(50, detailBoxY, totalTableWidth, detailLineHeight * 5.5)
-                 .strokeColor(TEXT_COLOR)
-                 .lineWidth(0.8)
+                 .strokeColor(BRAND_COLOR) // Use BRAND_COLOR for a more official border
+                 .lineWidth(1.5)
                  .stroke();
+
+              doc.fillColor(ACCENT_COLOR).rect(50, detailBoxY, totalTableWidth, 25).fill(); // Highlight header of the box
 
               doc.fontSize(12)
                  .font(FONT_BOLD)
                  .fillColor(BRAND_COLOR)
-                 .text("STUDENT DETAILS", 60, detailBoxY + 12, { underline: true });
+                 .text("STUDENT DETAILS", 60, detailBoxY + 7, { underline: false });
 
               doc.fontSize(10).fillColor(TEXT_COLOR).font(FONT_BASE);
 
@@ -7310,7 +7330,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
               doc.fontSize(12)
                  .font(FONT_BOLD)
-                 .fillColor(TEXT_COLOR)
+                 .fillColor(BRAND_COLOR)
                  .text("FINANCIAL YEAR WISE LEDGER", 50, yPosition, { underline: true });
 
               yPosition += 25;
@@ -7318,25 +7338,25 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               const startX = 50;
               let startY = yPosition;
               const rowHeight = 22;
-              const headers = ["Acad Year", "F.Y", "Prev Due", "Demand", "Amount Paid", "Bank Date", "Bank Ref No", "Amount Due"];
+              const headers = ["Acad Year", "F.Y", "Prev Due (Rs.)", "Demand (Rs.)", "Paid (Rs.)", "Bank Date", "Bank Ref No", "Due/Overpaid (Rs.)"];
 
               // Header Background
               doc.rect(startX, startY, totalTableWidth, rowHeight)
-                 .fillColor(ACCENT_COLOR)
+                 .fillColor(BRAND_COLOR) // Use BRAND_COLOR for a bold header
                  .fill();
               
               // Header Border
               doc.rect(startX, startY, totalTableWidth, rowHeight)
-                 .strokeColor(TEXT_COLOR)
+                 .strokeColor(BRAND_COLOR)
                  .lineWidth(0.8)
                  .stroke();
 
-              doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD); 
+              doc.fillColor('white').fontSize(8).font(FONT_BOLD); // White text on dark blue header
 
               let currentX = startX;
               headers.forEach((h, i) => {
                 // Draw internal column lines
-                doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke();
+                doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke();
                 
                 // Print Header Text
                 doc.text(h, currentX + 2, startY + 7, { width: tableColWidths[i] - 4, align: "center" });
@@ -7344,7 +7364,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               });
               
               // Draw last column line
-              doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke();
+              doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, startY).lineTo(currentX, startY + rowHeight).stroke();
 
               startY += rowHeight;
 
@@ -7354,7 +7374,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               let rowCounter = 0;
 
               // --- Draw Row Helper ---
-              const drawStyledRow = (rowValues, isAfterGraduation = false) => {
+              const drawStyledRow = (rowValues) => {
                   currentX = startX;
                   const currentY = startY;
 
@@ -7377,15 +7397,23 @@ app.get("/account-copy-fy/:userId", (req, res) => {
 
                       let displayVal = String(val);
                       let align = "center";
-                      doc.fillColor(TEXT_COLOR);
+                      doc.fillColor(TEXT_COLOR).font(FONT_BASE);
 
                       if (j === 2 || j === 3 || j === 4 || j === 7) { // Financial fields
-                          displayVal = formatAmount(val);
+                          displayVal = String(val).includes('.') ? formatAmount(val) : formatAmount(parseFloat(val) || 0); // Ensure amount is formatted
                           align = "right";
-                          if (j === 7 && parseFloat(val) < 0) {
-                             doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Highlight excess payment (Negative due is overpaid)
-                          } else if (j === 7 && parseFloat(val) > 0) {
-                            doc.font(FONT_BOLD); // Highlight positive balance (still due)
+                          if (j === 7) { // Final Due/Overpaid column
+                             if (parseFloat(val) < 0) {
+                                doc.fillColor(BRAND_COLOR).font(FONT_BOLD); // Highlight excess payment (Negative due is overpaid) in BRAND_COLOR
+                             } else if (parseFloat(val) > 0) {
+                                doc.fillColor(DUE_COLOR).font(FONT_BOLD); // Highlight positive balance (still due) in RED
+                             } else {
+                                doc.fillColor(TEXT_COLOR).font(FONT_BOLD);
+                             }
+                          } else if (j === 4) { // Amount Paid
+                             doc.fillColor(BRAND_COLOR);
+                          } else {
+                             doc.fillColor(TEXT_COLOR);
                           }
                       }
 
@@ -7430,8 +7458,8 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                     const rowValues = [
                       i === 0 ? academicYear : "",
                       i === 0 ? fy : "",
-                      i === 0 ? formatAmount(prevDue) : "",
-                      i === 0 ? formatAmount(demand) : "",
+                      i === 0 ? prevDue : "",
+                      i === 0 ? demand : "",
                       amountPaid,
                       pt.parsedDate,
                       pt.ref_no || "",
@@ -7445,21 +7473,21 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       
                       // Redraw header on new page (using the simplified header draw for pagination)
                       currentX = startX;
-                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(ACCENT_COLOR).fill();
-                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(TEXT_COLOR).lineWidth(0.8).stroke();
-                      doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD);
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(BRAND_COLOR).fill();
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(BRAND_COLOR).lineWidth(0.8).stroke();
+                      doc.fillColor('white').fontSize(8).font(FONT_BOLD);
                       headers.forEach((h, i) => {
-                          doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                          doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
                           doc.text(h, currentX + 2, 50 + 7, { width: tableColWidths[i] - 4, align: "center" });
                           currentX += tableColWidths[i];
                       });
-                      doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                      doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
                     }
                     
                     drawStyledRow(rowValues);
                   });
                 } else {
-                  const rowValues = [academicYear, fy, formatAmount(prevDue), formatAmount(demand), 0, "", "", runningDue];
+                  const rowValues = [academicYear, fy, prevDue, demand, 0, "", "", runningDue];
                   
                   if (doc.y + rowHeight > doc.page.height - 50) {
                       doc.addPage();
@@ -7467,15 +7495,15 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       rowCounter = 0;
                       // Redraw header on new page
                       currentX = startX;
-                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(ACCENT_COLOR).fill();
-                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(TEXT_COLOR).lineWidth(0.8).stroke();
-                      doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD);
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(BRAND_COLOR).fill();
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(BRAND_COLOR).lineWidth(0.8).stroke();
+                      doc.fillColor('white').fontSize(8).font(FONT_BOLD);
                       headers.forEach((h, i) => {
-                          doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                          doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
                           doc.text(h, currentX + 2, 50 + 7, { width: tableColWidths[i] - 4, align: "center" });
                           currentX += tableColWidths[i];
                       });
-                      doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                      doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
                   }
 
                   drawStyledRow(rowValues);
@@ -7494,7 +7522,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                     carryForwardDue -= amountPaid;
 
                     const rowValues = [
-                      "", fy, formatAmount(0), formatAmount(0), amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue
+                      "", fy, 0, 0, amountPaid, pt.parsedDate, pt.ref_no || "", carryForwardDue
                     ];
 
                     if (doc.y + rowHeight > doc.page.height - 50) {
@@ -7503,18 +7531,18 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                       rowCounter = 0;
                       // Redraw header on new page
                       currentX = startX;
-                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(ACCENT_COLOR).fill();
-                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(TEXT_COLOR).lineWidth(0.8).stroke();
-                      doc.fillColor(TEXT_COLOR).fontSize(8).font(FONT_BOLD);
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).fillColor(BRAND_COLOR).fill();
+                      doc.rect(startX, 50, totalTableWidth, rowHeight).strokeColor(BRAND_COLOR).lineWidth(0.8).stroke();
+                      doc.fillColor('white').fontSize(8).font(FONT_BOLD);
                       headers.forEach((h, i) => {
-                          doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                          doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
                           doc.text(h, currentX + 2, 50 + 7, { width: tableColWidths[i] - 4, align: "center" });
                           currentX += tableColWidths[i];
                       });
-                      doc.strokeColor(TEXT_COLOR).lineWidth(0.8).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
+                      doc.strokeColor('white').lineWidth(0.5).moveTo(currentX, 50).lineTo(currentX, 50 + rowHeight).stroke();
                     }
 
-                    drawStyledRow(rowValues, true);
+                    drawStyledRow(rowValues);
                   });
                 }
               });
@@ -7522,8 +7550,17 @@ app.get("/account-copy-fy/:userId", (req, res) => {
               yPosition = startY + 30;
               
               // --- Final Due Amount (Prominent) ---
-              doc.fontSize(12).font(FONT_BOLD).fillColor(DUE_COLOR);
-              doc.text(`Final Outstanding Due: Rs. ${formatAmount(carryForwardDue)}`, 50, yPosition, { align: "right", width: totalTableWidth });
+              doc.fontSize(14).font(FONT_BOLD);
+              if (carryForwardDue > 0) {
+                  doc.fillColor(DUE_COLOR);
+                  doc.text(`FINAL OUTSTANDING DUE: Rs. ${formatAmount(carryForwardDue)}`, 50, yPosition, { align: "right", width: totalTableWidth });
+              } else if (carryForwardDue < 0) {
+                  doc.fillColor(BRAND_COLOR);
+                  doc.text(`ACCOUNT OVERPAID (REFUNDABLE): Rs. ${formatAmount(Math.abs(carryForwardDue))}`, 50, yPosition, { align: "right", width: totalTableWidth });
+              } else {
+                  doc.fillColor(TEXT_COLOR);
+                  doc.text(`ACCOUNT BALANCE: Rs. ${formatAmount(0)}`, 50, yPosition, { align: "right", width: totalTableWidth });
+              }
 
               // --- 4. ADD FOOTER TO ALL PAGES (Multi-page structure preserved) ---
               const pageCount = doc.bufferedPageRange().count;
@@ -7534,8 +7571,8 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 const footerY = 750; // Fixed position at bottom
                 
                 // Footer separator line
-                doc.strokeColor(LINE_COLOR)
-                   .lineWidth(0.5)
+                doc.strokeColor(BRAND_COLOR) // Use BRAND_COLOR for footer line
+                   .lineWidth(1)
                    .moveTo(50, footerY)
                    .lineTo(550, footerY)
                    .stroke();
@@ -7543,7 +7580,7 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 // Footer text - computer generated notice (centered)
                 doc.fontSize(8)
                    .fillColor(GRAY_COLOR)
-                   .text("This is a computer-generated document and does not require a signature.",
+                   .text("This is a computer-generated account statement and should be cross-verified with the accounts department for official purposes.",
                          50, footerY + 10, {
                              width: 500,
                              align: 'center'
@@ -7552,11 +7589,19 @@ app.get("/account-copy-fy/:userId", (req, res) => {
                 // Copyright and generation info (centered)
                 doc.fontSize(7)
                    .fillColor(GRAY_COLOR)
-                   .text(`Generated on ${currentDate} at ${currentTime} | © Sir C R Reddy College of Engineering, Eluru District`,
+                   .text(`Document Generated: ${currentDate} at ${currentTime} | © Sir C R Reddy College of Engineering, Eluru District`,
                          50, footerY + 25, {
                              width: 500,
                              align: 'center'
                          });
+                
+                // Page number
+                doc.fontSize(7)
+                   .fillColor(GRAY_COLOR)
+                   .text(`Page ${i + 1} of ${pageCount}`, 50, footerY + 25, {
+                       width: 500,
+                       align: 'right'
+                   });
               }
 
               doc.end();
@@ -7575,7 +7620,6 @@ app.get("/account-copy-fy/:userId", (req, res) => {
     }
   );
 });
-
 
 // ---------------- Fetch All Subjects Alphabetically ----------------
 app.get(["/principal/all-subjects", "/correspondent/all-subjects"], (req, res) => {
