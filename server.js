@@ -7124,14 +7124,6 @@ const DUE_COLOR = 'red';
 const FONT_BASE = "Helvetica";
 const FONT_BOLD = "Helvetica-Bold";
 
-// Helper function to format currency (fixed to 2 decimals)
-const formatAmount = (val) => {
-    const num = parseFloat(val);
-    // Ensure it's treated as 0 if null/NaN for consistency
-    if (isNaN(num) || val === "") return "0.00"; 
-    return num.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-};
-
 
 app.get("/account-copy-fy/:userId", (req, res) => {
   const { userId } = req.params;
